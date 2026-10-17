@@ -1,0 +1,54 @@
+import { describe, expect, it } from 'vitest';
+import { OrganismSimulation, QUALITY_PRESETS } from '../src/organism/simulation';
+import { createGenome } from '../src/organism/genome';
+import { neutralMorphology, emptyMarks } from '../src/organism/adaptation';
+import { rawToFeatures } from '../src/memory/features';
+import { MembraneShape } from '../src/organism/shape';
+
+function run(seconds: number, dt: number, windKmh: number, rain: number) {
+  const g = createGenome(31);
+  const sim = new OrganismSimulation(g, QUALITY_PRESETS.balanced);
+  sim.setView(1.6, 1);
+  const env = rawToFeatures(5, windKmh, 270, rain, 90, 90, 0.5, 95);
+  const mood = { energy: 0.8, curiosity: 0.5, openness: 0.6, cohesion: 0.4, tension: 0.7, stability: 0.3, comfort: 0.3, sensitivity: 0.6 };
+  for (let t = 0; t < seconds; t += dt) {
+    sim.update(dt, {
+      env, mood, arousal: 0.5, boredom: 0.2, morph: { ...neutralMorphology(), elongation: 0.8, axisX: 0.6 },
+      marks: emptyMarks(), genome: g, familiarity: 0.3,
+      pointer: { x: Math.sin(t) * 0.4, y: 0.1, vx: Math.cos(t) * 2, vy: 0, present: true, down: false },
+      lightAngle: 1, reducedMotion: false, weatherCode: 95,
+    });
+    if (Math.floor(t * 2) !== Math.floor((t - dt) * 2)) sim.disturb(0.1, 0.1, 0.8);
+  }
+  return sim;
+}
+
+describe('organism simulation', () => {
+  for (const [label, dt] of [['60 fps', 1 / 60], ['slow 12 fps', 1 / 12]] as const) {
+    it(`stays finite and coherent in a gale with rain at ${label}`, () => {
+      const sim = run(12, dt, 90, 6);
+      for (let i = 0; i < sim.pointCount * 3; i++) expect(Number.isFinite(sim.pts[i])).toBe(true);
+      // Filaments stay attached: every point within reach of the body.
+      for (const f of sim.filaments) {
+        const tip = (f.offset + f.segs - 1) * 3;
+        const d = Math.hypot(sim.pts[tip] - sim.cx, sim.pts[tip + 1] - sim.cy);
+        expect(d).toBeLessThan(sim.shape.radius * 2 + f.segLen * f.segs * 2.2);
+      }
+      expect(sim.particleCount).toBeGreaterThan(100);
+      expect(Number.isFinite(sim.cx) && Number.isFinite(sim.cy)).toBe(true);
+      expect(Math.abs(sim.cx)).toBeLessThan(2);
+    });
+  }
+
+  it('the membrane function is periodic and bounded', () => {
+    const s = new MembraneShape();
+    s.addHarmonic(3, 0.2, 1);
+    s.addHarmonic(2, 0.3, 0.5);
+    s.polyStrength = 0.5;
+    s.polySides = 6;
+    for (let a = 0; a < 7; a += 0.1) {
+      expect(s.radiusAt(a)).toBeCloseTo(s.radiusAt(a + Math.PI * 2), 5);
+      expect(s.radiusAt(a)).toBeGreaterThan(0);
+    }
+  });
+});

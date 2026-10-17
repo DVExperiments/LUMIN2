@@ -1,0 +1,11 @@
+{
+  "name": "LUMIN",
+  "short_name": "LUMIN",
+  "description": "A living organism of light, shaped by the weather it has experienced.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "background_color": "#04070f",
+  "theme_color": "#050914",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

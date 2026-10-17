@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#050914" />
+    <meta name="description" content="LUMIN: a living organism of light, shaped by the weather it has experienced." />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>LUMIN</title>
+  </head>
+  <body>
+    <canvas id="stage" tabindex="0" aria-label="A luminous organism. Move the pointer near it, click or tap to send a pulse, or use the arrow keys and space." role="img"></canvas>
+    <div id="probe" aria-hidden="true"></div>
+    <div id="lab-frame" aria-hidden="true"></div>
+
+    <div id="genesis" aria-hidden="true">
+      <p class="genesis-name" id="genesis-name"></p>
+      <p class="genesis-line" id="genesis-line"></p>
+    </div>
+
+    <header class="chrome identity" id="identity">
+      <h1 class="specimen"><span id="specimen-name">LUMIN</span></h1>
+      <button class="place" id="place-button" type="button" aria-haspopup="dialog">
+        <span id="place-text">Choose a place</span>
+      </button>
+    </header>
+
+    <p class="chrome conditions" id="conditions" aria-live="off"></p>
+
+    <div class="chrome lab-banner" id="lab-banner" hidden>
+      <p><strong>Laboratory.</strong> <span id="lab-banner-text">Simulated weather. Your organism’s real memory is untouched.</span></p>
+      <button type="button" class="pill-button" id="lab-exit-banner">Return to live weather</button>
+    </div>
+
+    <footer class="chrome dock">
+      <p class="status" id="status" role="status" aria-live="polite">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Preparing</span>
+      </p>
+      <nav class="actions" aria-label="LUMIN controls">
+        <button type="button" class="icon-button" id="btn-observatory" aria-label="Observatory" aria-expanded="false" aria-controls="observatory" title="Observatory (O)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="9.5" ry="6" /><circle cx="12" cy="12" r="2.6" /></svg>
+        </button>
+        <button type="button" class="icon-button" id="btn-lab" aria-label="Weather laboratory" aria-expanded="false" aria-controls="laboratory" title="Weather laboratory (L)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3.5h5M10.5 3.5v5.2L5.4 18a1.8 1.8 0 0 0 1.6 2.6h10a1.8 1.8 0 0 0 1.6-2.6l-5.1-9.3V3.5" /><path d="M7.6 14.5h8.8" /></svg>
+        </button>
+        <button type="button" class="icon-button" id="btn-settings" aria-label="Settings" aria-expanded="false" aria-controls="settings" title="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>
+        </button>
+        <button type="button" class="icon-button" id="btn-fullscreen" aria-label="Full screen" title="Full screen (F)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg>
+        </button>
+      </nav>
+    </footer>
+
+    <p class="hint" id="hint" aria-hidden="true">Move slowly near it. Click or tap to send a pulse.</p>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <!-- Observatory -->
+    <aside class="panel panel-right" id="observatory" aria-labelledby="obs-title" hidden>
+      <div class="panel-head">
+        <h2 id="obs-title">Observatory</h2>
+        <button type="button" class="close" data-close="observatory" aria-label="Close observatory">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div class="panel-body">
+        <section>
+          <p class="lede" id="obs-now"></p>
+          <dl class="facts" id="obs-weather"></dl>
+          <p class="fine" id="obs-source"></p>
+        </section>
+        <section>
+          <h3>Inner state</h3>
+          <p class="mode" id="obs-mode"></p>
+          <div class="meters" id="obs-behaviour"></div>
+        </section>
+        <section>
+          <h3>Fourteen days of weather</h3>
+          <canvas class="timeline" id="obs-timeline" width="680" height="300" role="img" aria-label="Timeline of temperature, wind and rain"></canvas>
+          <p class="legend"><span class="key k-temp"></span>Temperature <span class="key k-wind"></span>Wind <span class="key k-rain"></span>Rain <span class="key k-gap"></span>No data</p>
+          <dl class="facts" id="obs-trends"></dl>
+        </section>
+        <section>
+          <h3>How it has adapted</h3>
+          <p class="fine">Each line shows how far a trait has moved from where every organism begins (the tick). The faint mark shows where recent weather is pulling it.</p>
+          <div class="meters adaptation" id="obs-adaptation"></div>
+        </section>
+        <section>
+          <h3>Notes</h3>
+          <div class="notes" id="obs-notes"></div>
+        </section>
+        <section>
+          <h3>Remembered events</h3>
+          <ol class="events" id="obs-events"></ol>
+        </section>
+        <section>
+          <h3>Identity</h3>
+          <dl class="facts" id="obs-identity"></dl>
+        </section>
+      </div>
+    </aside>
+
+    <!-- Laboratory -->
+    <aside class="panel panel-left lab" id="laboratory" aria-labelledby="lab-title" hidden>
+      <div class="panel-head">
+        <h2 id="lab-title">Weather laboratory</h2>
+        <button type="button" class="close" data-close="laboratory" aria-label="Close laboratory panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div class="panel-body">
+        <section id="lab-intro">
+          <p class="lede">Shape the weather by hand and watch the response.</p>
+          <fieldset class="choice">
+            <legend>Specimen</legend>
+            <label><input type="radio" name="specimen" value="copy" checked /> <span id="lab-copy-label">A temporary copy of your organism</span><small>Discarded when you return to live weather.</small></label>
+            <label><input type="radio" name="specimen" value="separate" /> <span>A separate experimental organism</span><small>Kept in this browser, with its own memory.</small></label>
+          </fieldset>
+          <button type="button" class="primary" id="lab-enter">Start experiment</button>
+        </section>
+        <section id="lab-controls" hidden>
+          <div class="presets" role="group" aria-label="Weather presets">
+            <button type="button" data-preset="calm">Still frost</button>
+            <button type="button" data-preset="gale">Winter gale</button>
+            <button type="button" data-preset="downpour">Tropical downpour</button>
+            <button type="button" data-preset="summer">Summer evening</button>
+          </div>
+          <div class="sliders" id="lab-sliders"></div>
+          <div class="exposure">
+            <h3>Accelerated exposure</h3>
+            <p class="fine">Feed it simulated hours of this weather so its memory and shape adapt, as if days had passed.</p>
+            <div class="row">
+              <button type="button" id="lab-expose-1">Expose for 1 day</button>
+              <button type="button" id="lab-expose-7">Expose for 7 days</button>
+            </div>
+            <p class="fine" id="lab-clock"></p>
+          </div>
+          <button type="button" class="primary" id="lab-exit">Return to live weather</button>
+        </section>
+      </div>
+    </aside>
+
+    <!-- Settings -->
+    <aside class="panel panel-right settings" id="settings" aria-labelledby="settings-title" hidden>
+      <div class="panel-head">
+        <h2 id="settings-title">Settings</h2>
+        <button type="button" class="close" data-close="settings" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div class="panel-body">
+        <section>
+          <fieldset class="segmented" id="set-quality">
+            <legend>Rendering quality</legend>
+            <label><input type="radio" name="quality" value="auto" /><span>Automatic</span></label>
+            <label><input type="radio" name="quality" value="eco" /><span>Eco</span></label>
+            <label><input type="radio" name="quality" value="balanced" /><span>Balanced</span></label>
+            <label><input type="radio" name="quality" value="ultra" /><span>Ultra</span></label>
+          </fieldset>
+          <p class="fine" id="set-quality-info"></p>
+        </section>
+        <section>
+          <fieldset class="segmented" id="set-motion">
+            <legend>Motion</legend>
+            <label><input type="radio" name="motion" value="system" /><span>Match system</span></label>
+            <label><input type="radio" name="motion" value="reduce" /><span>Reduced</span></label>
+            <label><input type="radio" name="motion" value="full" /><span>Full</span></label>
+          </fieldset>
+          <p class="fine">Reduced motion slows the organism, removes trails and lightning, and softens ripples.</p>
+        </section>
+        <section>
+          <h3>Your organism’s data</h3>
+          <p class="fine" id="set-storage"></p>
+          <div class="row">
+            <button type="button" id="set-export">Export organism</button>
+            <button type="button" id="set-import">Import organism</button>
+            <input type="file" id="set-import-file" accept="application/json,.json" hidden />
+          </div>
+          <button type="button" class="danger" id="set-reset">Begin a new organism</button>
+        </section>
+        <section>
+          <h3>Keyboard</h3>
+          <dl class="keys">
+            <dt>Arrow keys</dt><dd>Move a light probe near the organism</dd>
+            <dt>Space or Enter</dt><dd>Send a pulse</dd>
+            <dt>O</dt><dd>Observatory</dd>
+            <dt>L</dt><dd>Laboratory</dd>
+            <dt>H</dt><dd>Hide or show the interface</dd>
+            <dt>F</dt><dd>Full screen</dd>
+            <dt>Esc</dt><dd>Close panels</dd>
+          </dl>
+        </section>
+        <section>
+          <p class="fine">Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Only your chosen city name or coordinates are sent; nothing else leaves your browser.</p>
+        </section>
+      </div>
+    </aside>
+
+    <!-- Location dialog -->
+    <dialog id="location-dialog" aria-labelledby="loc-title">
+      <form method="dialog" class="dialog-body" id="location-form">
+        <h2 id="loc-title">Where does it live?</h2>
+        <p class="fine">Its weather, and its memory, will come from this place.</p>
+        <label class="search">
+          <span class="visually-hidden">City name</span>
+          <input type="search" id="loc-query" placeholder="Search for a city" autocomplete="off" spellcheck="false" />
+        </label>
+        <ul class="results" id="loc-results" role="listbox" aria-label="Matching places"></ul>
+        <p class="fine" id="loc-message" role="status"></p>
+        <div class="row">
+          <button type="button" id="loc-device">Use this device’s location</button>
+          <button type="button" id="loc-cancel" value="cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Confirmation dialog -->
+    <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+      <form method="dialog" class="dialog-body">
+        <h2 id="confirm-title"></h2>
+        <p id="confirm-text"></p>
+        <div class="row">
+          <button type="submit" value="cancel" id="confirm-cancel">Keep my organism</button>
+          <button type="submit" value="confirm" class="danger" id="confirm-ok"></button>
+        </div>
+      </form>
+    </dialog>
+
+    <noscript><p class="noscript">LUMIN needs JavaScript to grow.</p></noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

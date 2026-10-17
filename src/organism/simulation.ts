@@ -607,7 +607,20 @@ export class OrganismSimulation {
       prev[o0] = rx; prev[o0 + 1] = ry; prev[o0 + 2] = f.depthNow;
 
       const n = f.segs;
-      const maxBend = f.long ? 0.3 - e.crystal * 0.15 : 0.45;
+      // Fleeing a fast pointer: the whole filament sways away together (no local dents).
+      let fleeX = 0, fleeY = 0;
+      if (flee > 0) {
+        const mo = (f.offset + (n >> 1)) * 3;
+        const ddx = pts[mo] - px, ddy = pts[mo + 1] - py;
+        const dd = Math.sqrt(ddx * ddx + ddy * ddy) + 1e-3;
+        if (dd < 0.8) {
+          const k2 = flee * 2.4 * (1 - dd / 0.8) / dd;
+          fleeX = ddx * k2;
+          fleeY = ddy * k2;
+        }
+      }
+      const maxBend = f.long ? 0.24 - e.crystal * 0.1 : 0.42;
+      const cosMax = Math.cos(maxBend);
       // Long travelling waves: a little over one wavelength along the filament.
       f.phase += sdt * f.freq * (0.55 + mood.energy * 1.2) * TAU * 0.22;
       const kWave = (TAU * (1.1 + f.freq * 0.4)) / n;
@@ -651,11 +664,13 @@ export class OrganismSimulation {
           const d = Math.sqrt(dx * dx + dy * dy + 0.002);
           if (d < 0.75) {
             const fall = 1 - d / 0.75;
-            const kk = (reachToward * 1.6 * fall * u - flee * 5 * fall * fall) / d;
+            const kk = (reachToward * 1.6 * fall * u) / d;
             fx += dx * kk;
             fy += dy * kk;
           }
         }
+        fx += fleeX * u;
+        fy += fleeY * u;
         // Ripple wavefronts push outward.
         for (const rp of this.ripples) {
           if (!rp.active) continue;
@@ -690,21 +705,26 @@ export class OrganismSimulation {
       }
       // Kink removal: diffuse curvature only at joints bent past maxBend. Diffusion can only
       // remove energy (stable), and gentle curves elsewhere are left exactly as they are.
-      for (let pass = 0; pass < 3; pass++) {
+      // The bend test uses the cosine of the joint angle, avoiding trigonometry in this hot loop.
+      for (let pass = 0; pass < 2; pass++) {
         for (let j = 1; j < n - 1; j++) {
           const a0 = (f.offset + j - 1) * 3, b0 = (f.offset + j) * 3, c0 = (f.offset + j + 1) * 3;
-          const ang1 = Math.atan2(pts[b0 + 1] - pts[a0 + 1], pts[b0] - pts[a0]);
-          const ang2 = Math.atan2(pts[c0 + 1] - pts[b0 + 1], pts[c0] - pts[b0]);
-          const bend = Math.abs(angleDelta(ang1, ang2));
-          const w = bend > maxBend ? Math.min(0.5, (bend - maxBend) * 1.5 + 0.1) : 0.02;
+          const ux = pts[b0] - pts[a0], uy = pts[b0 + 1] - pts[a0 + 1];
+          const vx2 = pts[c0] - pts[b0], vy2 = pts[c0 + 1] - pts[b0 + 1];
+          const cosJ = (ux * vx2 + uy * vy2) / (Math.sqrt((ux * ux + uy * uy) * (vx2 * vx2 + vy2 * vy2)) + 1e-12);
+          const w = cosJ < cosMax ? Math.min(0.5, (cosMax - cosJ) * 5 + 0.1) : 0.02;
           pts[b0] += ((pts[a0] + pts[c0]) * 0.5 - pts[b0]) * w;
           pts[b0 + 1] += ((pts[a0 + 1] + pts[c0 + 1]) * 0.5 - pts[b0 + 1]) * w;
         }
       }
       // Light signals: each heartbeat travels out of the body into the filaments.
-      if (newBeat && this.rnd() < (f.long ? (f.tier === 0 ? 0.9 : 0.4 + mood.energy * 0.3) : 0.06)) {
-        f.signal = -0.12 - this.rnd() * 0.08;
-        f.signalStrength = (f.tier === 0 ? 0.8 : 0.5) + mood.energy * 0.5 + proximity * 0.4;
+      // After dark the organism becomes bioluminescent: heartbeats light far more filaments,
+      // including the cilia, and the pulses burn brighter.
+      const night = 1 - e.daylight;
+      const pSignal = f.long ? (f.tier === 0 ? 0.9 : 0.4 + mood.energy * 0.3 + night * 0.3) : 0.06 + night * 0.4;
+      if (newBeat && this.rnd() < pSignal) {
+        f.signal = -0.12 - this.rnd() * 0.08 - (f.long ? 0 : this.rnd() * 0.3);
+        f.signalStrength = ((f.tier === 0 ? 0.8 : 0.5) + mood.energy * 0.5 + proximity * 0.4) * (1 + night * 0.7);
       }
       if (f.signal < 1.4) f.signal += sdt * signalSpeed * (f.long ? 0.6 : 1.8);
       else f.signalStrength = approach(f.signalStrength, 0, dt, 0.5);
@@ -845,12 +865,13 @@ export class OrganismSimulation {
       else if (kind === P_RAIN) alpha = 0.35 + e.daylight * 0.15;
       else if (kind === P_SPORE) alpha = Math.sin(Math.PI * Math.min(1, age * 1.4)) * 0.9;
       else alpha = (1 - age) * (1 - age);
-      const isMote = kind === P_MOTE;
+      // Motes and spores drift as crisp points; only rain and tap sparks leave trails.
+      const isMote = kind === P_MOTE || kind === P_SPORE;
       const buf = isMote ? moteOut : out;
       const w = (isMote ? moteCount : count) * PARTICLE_STRIDE;
       // Motes carry no velocity to the renderer, so they draw as round points, not streaks.
       buf[w] = x; buf[w + 1] = y; buf[w + 2] = isMote ? 0 : vx; buf[w + 3] = isMote ? 0 : vy;
-      buf[w + 4] = p[o + 6] * (isMote ? 0.3 + depth * 0.45 : kind === P_SPORE ? 0.7 : 1);
+      buf[w + 4] = p[o + 6] * (kind === P_MOTE ? 0.3 + depth * 0.45 : kind === P_SPORE ? 0.6 : 1);
       buf[w + 5] = alpha;
       buf[w + 6] = p[o + 8];
       buf[w + 7] = kind;

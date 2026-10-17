@@ -22,6 +22,11 @@ const FIL_FLOATS = 6;
 export class WebGLRenderer implements Renderer {
   readonly kind = 'webgl2' as const;
   lost = false;
+  /** Smoothed GPU frame time from EXT_disjoint_timer_query_webgl2, or null if unavailable. */
+  gpuMs: number | null = null;
+  private timerExt: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null = null;
+  private query: WebGLQuery | null = null;
+  private queryActive = false;
   private gl: WebGL2RenderingContext;
   private hdr = false;
   private settings!: RenderSettings;
@@ -92,6 +97,9 @@ export class WebGLRenderer implements Renderer {
   private init(settings: RenderSettings) {
     const gl = this.gl;
     this.hdr = !!gl.getExtension('EXT_color_buffer_float') || !!gl.getExtension('EXT_color_buffer_half_float');
+    this.timerExt = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    this.query = null;
+    this.queryActive = false;
     this.settings = settings;
     this.buildPrograms(settings.octaves);
     this.progFil = new GLProgram(gl, FIL_VS, FIL_FS, 'filament');
@@ -241,7 +249,8 @@ export class WebGLRenderer implements Renderer {
       // Depth: 0 far behind, 1 in front.
       const front = f.depthNow * 0.5 + 0.5;
       const tierGain = f.tier === 0 ? 1.15 : f.tier === 1 ? 0.62 : 0.55;
-      const base = tierGain * (0.38 + front * 0.72) * (0.7 + e.energy * 0.4) * Math.min(1, f.growth * 1.4);
+      // At night the steady glow dims a little so the bioluminescent pulses carry the light.
+      const base = tierGain * (0.38 + front * 0.72) * (0.7 + e.energy * 0.4) * Math.min(1, f.growth * 1.4) * (0.72 + e.daylight * 0.28);
       const widthDepth = 0.6 + front * 0.55;
       const first = vert;
       for (let j = 0; j < n; j++) {
@@ -285,9 +294,39 @@ export class WebGLRenderer implements Renderer {
     return ii;
   }
 
+  /** Collect a finished GPU timing query (non-blocking) and start a new one. */
+  private beginTiming() {
+    const ext = this.timerExt;
+    if (!ext) return;
+    const gl = this.gl;
+    if (this.query && !this.queryActive) {
+      const available = gl.getQueryParameter(this.query, gl.QUERY_RESULT_AVAILABLE);
+      const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+      if (available) {
+        if (!disjoint) {
+          const ms = (gl.getQueryParameter(this.query, gl.QUERY_RESULT) as number) / 1e6;
+          this.gpuMs = this.gpuMs === null ? ms : this.gpuMs + (ms - this.gpuMs) * 0.1;
+        }
+        gl.deleteQuery(this.query);
+        this.query = null;
+      } else return; // still in flight; time a later frame
+    }
+    this.query = gl.createQuery();
+    if (!this.query) return;
+    gl.beginQuery(ext.TIME_ELAPSED_EXT, this.query);
+    this.queryActive = true;
+  }
+
+  private endTiming() {
+    if (!this.timerExt || !this.queryActive) return;
+    this.gl.endQuery(this.timerExt.TIME_ELAPSED_EXT);
+    this.queryActive = false;
+  }
+
   render(sim: OrganismSimulation, frame: FrameInfo) {
     if (this.lost || !this.scene || !this.trailA || !this.trailB) return;
     const gl = this.gl;
+    this.beginTiming();
     const e = sim.expr;
     const viewX = sim.viewX, viewY = sim.viewY;
     this.updatePalette(sim);
@@ -496,6 +535,7 @@ export class WebGLRenderer implements Renderer {
     gl.uniform1f(pc.u('uLab'), frame.lab ? 1 : 0);
     this.fullscreen();
     gl.bindVertexArray(null);
+    this.endTiming();
   }
 
   dispose() {

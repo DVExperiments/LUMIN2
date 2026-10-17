@@ -32,5 +32,7 @@ export interface Renderer {
   render(sim: OrganismSimulation, frame: FrameInfo): void;
   /** True if the GPU context is currently lost. */
   readonly lost: boolean;
+  /** Smoothed GPU time per frame in ms, when the browser exposes GPU timer queries. */
+  readonly gpuMs: number | null;
   dispose(): void;
 }

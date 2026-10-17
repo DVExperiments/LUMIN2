@@ -136,7 +136,7 @@ void main(){
   vec3 N = normalize(vec3(pn, z + 1e-3));
   vec3 L = normalize(vec3(cos(uLightAngle), sin(uLightAngle), 0.9));
   float diff = max(dot(N, L), 0.0);
-  float spec = pow(max(dot(reflect(-L, N), vec3(0.0,0.0,1.0)), 0.0), 18.0);
+  float spec = pow(max(dot(reflect(-L, N), vec3(0.0,0.0,1.0)), 0.0), 48.0);
   float fres = pow(1.0 - z, 2.5);
 
   float inside = 1.0 - smoothstep(0.97 - uSoft*0.05, 1.0, d);
@@ -187,8 +187,8 @@ void main(){
     // Nucleus: heavy, lagging core with a heartbeat.
     vec2 np = ip - rot(uNucleus / max(uRadius, 1e-3), -uSpin) * 0.6;
     float nd = length(np);
-    float nucleus = exp(-nd*nd*(22.0 - uBeat*6.0)) * (0.5 + uBeat * 0.8);
-    float nucleusCore = exp(-nd*nd*160.0) * (0.5 + uBeat * 0.8);
+    float nucleus = exp(-nd*nd*(30.0 - uBeat*8.0)) * (0.32 + uBeat * 0.55);
+    float nucleusCore = exp(-nd*nd*260.0) * (0.3 + uBeat * 0.5);
     // Growth rings (storms survived): concentric luminous bands.
     float rings = 0.0;
     for(int i=0;i<9;i++){
@@ -232,7 +232,7 @@ void main(){
     col += mix(uColC, uColE, uEmber) * nucleus * 0.85;
     col += vec3(1.0, 0.97, 0.92) * nucleusCore * 0.45;
     col += uColC * (rings + vac * 0.7) * inside;
-    col += vec3(1.0) * spec * 0.35 * inside * (0.4 + uDay * 0.6);
+    col += vec3(1.0) * spec * 0.18 * inside * (0.4 + uDay * 0.6);
   }
   col *= uBright;
   outColor = vec4(col, 1.0);

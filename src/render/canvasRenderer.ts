@@ -14,6 +14,7 @@ function hslCss(h: number, s: number, l: number, a = 1): string {
 export class CanvasRenderer implements Renderer {
   readonly kind = 'canvas2d' as const;
   readonly lost = false;
+  readonly gpuMs = null;
   private ctx: CanvasRenderingContext2D;
   private w = 1;
   private h = 1;

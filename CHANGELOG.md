@@ -1,5 +1,31 @@
 # Changelog
 
+## 4.0.0
+
+Measuring performance instead of guessing, removing the last misleading
+visuals, and night-time bioluminescence.
+
+- **Frame timing in Settings.** The Rendering quality line now splits each
+  frame into simulation and drawing time on the CPU, and GPU time (through
+  `EXT_disjoint_timer_query_webgl2`, where the browser supports it). v3's
+  speed-up was measured in software rendering and did not show up on a real
+  machine; this shows where the time really goes.
+- **Cheaper simulation.** The kink check now uses a cosine threshold instead
+  of trigonometry, with one fewer pass. The Ultra simulation step is 11 %
+  cheaper (4.52 to 4.01 ms per frame, measured in Node at 26 fps).
+- **No misleading streaks.** Spores now drift as crisp points like the
+  ambient motes. Only rain and tap sparks leave trails, so streaks on screen
+  now mean it is raining.
+- **Pointer response is coherent.** Moving the pointer fast near a tentacle
+  sways the whole tentacle away, instead of denting single points into
+  zigzags. The joint limit is also tighter.
+- **Nucleus and highlight exposure.** The nucleus is smaller and dimmer, and
+  the specular highlight is sharper and fainter, so the interior is no longer
+  washed out at full resolution.
+- **Night bioluminescence.** After dark, heartbeats light far more filaments,
+  including the cilia, and the pulses burn brighter while the steady glow
+  dims slightly. The organism looks visibly different by night.
+
 ## 3.0.0
 
 Performance, automatic quality, and the last visual faults found at full

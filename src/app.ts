@@ -86,6 +86,9 @@ export class App {
   private systemReduced = false;
   private lastWeatherError: string | null = null;
   private storageWarned = false;
+  /** Smoothed CPU milliseconds per frame: behaviour + simulation, and draw submission. */
+  private simMs = 0;
+  private drawMs = 0;
 
   constructor(private canvas: HTMLCanvasElement) {}
 
@@ -436,6 +439,7 @@ export class App {
     } else this.ui.setProbe(false);
 
     // Behaviour.
+    const tSim = performance.now();
     this.engine.update(dt, {
       env: this.envSmooth,
       exposure: o.memory.exposure,
@@ -464,7 +468,11 @@ export class App {
     });
     this.fogX += this.envSmooth.windX * dt * 0.035 * (this.reducedMotion ? 0.4 : 1);
     this.fogY += (this.envSmooth.windY * 0.035 + 0.002) * dt * (this.reducedMotion ? 0.4 : 1);
+    const tDraw = performance.now();
     if (!this.renderer.lost) this.renderer.render(this.sim, { lab: !!this.lab, reducedMotion: this.reducedMotion, fogX: this.fogX, fogY: this.fogY });
+    const tEnd = performance.now();
+    this.simMs += (tDraw - tSim - this.simMs) * 0.05;
+    this.drawMs += (tEnd - tDraw - this.drawMs) * 0.05;
 
     if (this.quality.sample(dtMs, dt)) {
       this.renderer.configure(this.quality.settings);
@@ -520,7 +528,12 @@ export class App {
     if (s.source === 'simulated') label = this.live.location ? 'Simulated weather, live data unavailable' : 'Simulated weather, no place chosen yet';
     this.ui.setStatus(s.source, this.weather.busy && s.fetchedAt === null ? 'Fetching weather' : label);
     this.ui.setConditions(s.source === 'simulated' ? '' : conditionsSentence(s.conditions, describeCode));
-    this.ui.setQualityInfo(this.quality.describe(this.renderer.kind === 'webgl2' ? 'WebGL2' : 'Canvas 2D fallback'));
+    const gpu = this.renderer.gpuMs;
+    this.ui.setQualityInfo(
+      `${this.quality.describe(this.renderer.kind === 'webgl2' ? 'WebGL2' : 'Canvas 2D fallback')} ` +
+        `Each frame: simulation ${this.simMs.toFixed(1)} ms and drawing ${this.drawMs.toFixed(1)} ms on the CPU` +
+        (gpu !== null ? `, ${gpu.toFixed(1)} ms on the GPU.` : '; GPU timing is not available in this browser.'),
+    );
     const mode = MODE_LABEL[this.engine.mode];
     this.canvas.setAttribute('aria-label', `${genomeOf(this.active).name}, a luminous organism, is ${mode.toLowerCase()}. Move the pointer near it, click or tap to send a pulse, or use the arrow keys and space.`);
   }

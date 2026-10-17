@@ -57,6 +57,7 @@ click away.
 
 * Quality: Automatic, Eco, Balanced or Ultra. Automatic learns your display's
   refresh rate and settles at the highest level that keeps pace with it.
+  Settings also shows how long each frame takes on the CPU and the GPU.
 * Motion: Match system, Reduced or Full. Reduced motion slows the organism
   and removes trails, lightning and strong ripples.
 * Data: export, import, or begin a new organism (with confirmation).

@@ -45,8 +45,18 @@ describe('organism simulation', () => {
           longest = Math.max(longest, l);
         }
         if (f.growth > 0.5) expect(longest / (sum / (f.segs - 1))).toBeLessThan(1.35);
+        // No kinks: every joint stays within the bend limit (plus constraint slack).
+        for (let j = 2; j < f.segs; j++) {
+          const a0 = (f.offset + j - 2) * 3, a1 = (f.offset + j - 1) * 3, a2 = (f.offset + j) * 3;
+          const p1 = Math.atan2(sim.pts[a1 + 1] - sim.pts[a0 + 1], sim.pts[a1] - sim.pts[a0]);
+          const p2 = Math.atan2(sim.pts[a2 + 1] - sim.pts[a1 + 1], sim.pts[a2] - sim.pts[a1]);
+          let d = Math.abs(p2 - p1) % (2 * Math.PI);
+          if (d > Math.PI) d = 2 * Math.PI - d;
+          if (f.growth > 0.5) expect(d, `joint ${j}`).toBeLessThan(0.5 + 0.05);
+        }
       }
-      expect(sim.particleCount).toBeGreaterThan(100);
+      expect(sim.particleCount + sim.moteCount).toBeGreaterThan(100);
+      expect(sim.moteCount).toBeGreaterThan(50);
       expect(Number.isFinite(sim.cx) && Number.isFinite(sim.cy)).toBe(true);
       expect(Math.abs(sim.cx)).toBeLessThan(2);
     });

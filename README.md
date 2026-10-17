@@ -55,7 +55,8 @@ click away.
 
 **Settings.**
 
-* Quality: Automatic, Eco, Balanced or Ultra.
+* Quality: Automatic, Eco, Balanced or Ultra. Automatic learns your display's
+  refresh rate and settles at the highest level that keeps pace with it.
 * Motion: Match system, Reduced or Full. Reduced motion slows the organism
   and removes trails, lightning and strong ripples.
 * Data: export, import, or begin a new organism (with confirmation).
@@ -158,6 +159,8 @@ If WebGL2 is unavailable, a Canvas 2D renderer draws the same simulation.
 * no per-frame allocation in the simulation;
 * instanced particles;
 * adaptive render resolution, bloom depth and noise octaves (automatic mode);
+* atmosphere at quarter resolution and particle trails at half resolution;
+* the membrane shader skips interior work outside the membrane;
 * Eco, Balanced and Ultra presets;
 * rendering stops entirely while the tab is hidden.
 
@@ -166,7 +169,7 @@ Weather is cached separately in IndexedDB and labelled with its age.
 
 ## Testing status
 
-* `npm test` runs 37 Vitest tests. They cover:
+* `npm test` runs 42 Vitest tests. They cover:
   * memory ordering, de-duplication, gaps, events and timescales;
   * determinism, adaptation and persistence of acquired structure;
   * history-dependent individuality;
@@ -175,7 +178,10 @@ Weather is cached separately in IndexedDB and labelled with its age.
   * live/cached labelling;
   * export and import round-trips, migration and rejection of bad files;
   * behaviour bounds and autonomy;
-  * simulation stability in a gale at 60 and 12 fps.
+  * simulation stability, inextensibility and absence of kinks in a gale at
+    60 and 12 fps;
+  * automatic quality behaviour on simulated 60 Hz and 144 Hz displays with
+    fast, mid-range and slow GPUs.
 * The visual smoke script was run in headless Chromium (SwiftShader software
   WebGL) against the production build with mocked weather. It reported no
   console errors for the gale and cold scenarios.

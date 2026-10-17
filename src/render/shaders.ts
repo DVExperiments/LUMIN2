@@ -139,100 +139,101 @@ void main(){
   float spec = pow(max(dot(reflect(-L, N), vec3(0.0,0.0,1.0)), 0.0), 18.0);
   float fres = pow(1.0 - z, 2.5);
 
-  // Interior sampled through a slight lens bulge, rotating with the body.
-  vec2 ip = rot(pn * (0.75 + 0.25*z), -uSpin);
-  float t = uTime;
-  vec3 wp = vec3(ip * 1.8, t * 0.07);
-  vec2 warp = vec2(fbm(wp + vec3(0.0,0.0,1.3)), fbm(wp + vec3(5.2,1.3,0.0)));
-  float flow = fbm(vec3(ip * 2.4 + warp * (0.9 + uOpen*0.6), t * 0.11));
-
-  // Cellular organelles: soft cells when warm, hard facets when crystalline.
-  vec2 cp = ip * (3.2 + uCrystal * 2.0) + warp * 0.4;
-  vec2 ci = floor(cp), cf = fract(cp);
-  float f1 = 8.0, f2 = 8.0;
-  for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){
-    vec2 g = vec2(float(x), float(y));
-    vec2 o = hash22(ci + g);
-    o = 0.5 + 0.42 * sin(t * 0.35 + TAU * o);
-    vec2 dv = g + o - cf;
-    float dist = mix(length(dv), max(abs(dv.x), abs(dv.y)) * 1.05, uCrystal * 0.8);
-    if(dist < f1){ f2 = f1; f1 = dist; } else if(dist < f2){ f2 = dist; }
-  }
-  float edge = f2 - f1;
-  float walls = 1.0 - smoothstep(0.0, mix(0.16, 0.05, uCrystal), edge);
-
-  // Veins: thin ridges of noise.
-  float vn = snoise(vec3(ip * 3.0 + warp, t * 0.05 + 4.0));
-  float veins = 1.0 - smoothstep(0.0, 0.07, abs(vn));
-
-  // Nucleus: heavy, lagging core with a heartbeat.
-  vec2 np = ip - rot(uNucleus / max(uRadius, 1e-3), -uSpin) * 0.6;
-  float nd = length(np);
-  float nucleus = exp(-nd*nd*(22.0 - uBeat*6.0)) * (0.5 + uBeat * 0.8);
-  float nucleusCore = exp(-nd*nd*160.0) * (0.5 + uBeat * 0.8);
-
   float inside = 1.0 - smoothstep(0.97 - uSoft*0.05, 1.0, d);
   float rimW = 0.022 + uSoft * 0.035 + uTension * 0.01;
   float rim = exp(-pow((d - 1.0) / rimW, 2.0));
   float outer = max(0.0, d - 1.0);
   float halo = exp(-outer * mix(10.0, 4.5, uSoft)) * step(1.0, d);
-
-  // Growth rings (storms survived): concentric luminous bands.
-  float rings = 0.0;
-  for(int i=0;i<9;i++){
-    float fi = float(i);
-    float vis = clamp(uRings - fi, 0.0, 1.0);
-    if(vis <= 0.0) break;
-    float rr = 0.86 - fi * 0.075 + sin(th * 3.0 + fi) * 0.008;
-    rings += exp(-pow((d - rr) / 0.010, 2.0)) * vis * 0.55;
-  }
-  // Vacuoles (deluges): bright bubbles drifting in the cytoplasm.
-  float vac = 0.0;
-  for(int i=0;i<12;i++){
-    float fi = float(i);
-    if(fi >= uVacuoles) break;
-    vec2 h = hash22(vec2(fi, 3.7));
-    float a = h.x * TAU + t * 0.05 * (h.y - 0.5);
-    vec2 c = vec2(cos(a), sin(a)) * (0.25 + h.y * 0.45);
-    float s = 0.06 + h.x * 0.05;
-    float dv = length(ip - c);
-    vac += (exp(-pow((dv - s) / 0.012, 2.0)) * 0.9 + exp(-dv*dv/(s*s)) * 0.15) * clamp(uVacuoles - fi, 0.0, 1.0);
-  }
   // Calm halo (long stillness): a quiet second ring outside the body.
   float calm = exp(-pow((d - 1.45) / 0.05, 2.0)) * uHalo * 0.5;
-
-  // Endoplasm: an inner, slower membrane that breathes against the outer one.
-  float innerR = 0.62 + 0.05 * sin(th * 3.0 + t * 0.4) + 0.04 * fbm(vec3(cos(th), sin(th), t * 0.15)) - uBeat * 0.05;
-  // A soft volume rather than a drawn line: brightest just inside its edge, fading inward.
-  float endoEdge = smoothstep(innerR + 0.06, innerR - 0.02, d) * smoothstep(innerR - 0.30, innerR - 0.02, d);
-  float endo = endoEdge * (0.16 + uOpen * 0.12) * (0.75 + 0.25 * fbm(vec3(ip * 4.0, t * 0.2)));
-  float endoFill = smoothstep(innerR + 0.05, innerR - 0.18, d);
-
-  // Heartbeat: a pressure wave travels from the nucleus out to the rim.
-  float waveR = uBeatPhase * 1.25;
-  float beatWave = exp(-pow((d - waveR) / 0.07, 2.0)) * (1.0 - smoothstep(0.55, 1.0, uBeatPhase)) * (0.35 + uEnergy * 0.4);
-
   // Rim is lit unevenly: brighter on the side facing the light, dim on the far side.
   vec2 rimDir = normalize(pn + 1e-4);
   float sunSide = 0.35 + 0.95 * max(0.0, dot(rimDir, normalize(L.xy + 1e-4)));
 
-  float f01 = flow * 0.5 + 0.5;
-  vec3 cyto = mix(uColB, uColA, f01);
-  cyto = mix(cyto, uColC, smoothstep(0.55, 0.95, f01) * 0.5);
   vec3 col = vec3(0.0);
-  float body = (0.10 + 0.30 * f01 * f01 + walls * (0.16 + uCrystal * 0.28) + veins * 0.14) * inside;
-  // Outer cytoplasm is thin and glassy; the endoplasm is denser and warmer.
-  body *= mix(0.55, 1.0, endoFill);
-  col += cyto * body * (0.5 + diff * 0.7);
-  col += mix(uColA, uColC, 0.35) * endo;
   col += uColA * rim * (0.42 + fres * 0.4 + uBeat * 0.25) * sunSide;
-  col += mix(uColA, uColC, 0.5) * beatWave * inside;
-  col += mix(uColC, uColE, uEmber) * nucleus * 0.85;
-  col += vec3(1.0, 0.97, 0.92) * nucleusCore * 0.45;
-  col += uColC * (rings + vac * 0.7) * inside;
-  col += vec3(1.0) * spec * 0.35 * inside * (0.4 + uDay * 0.6);
   col += uColA * halo * 0.22 * uGlow;
   col += uColC * calm;
+
+  // Everything below exists only inside the membrane. Most of this quad lies outside it,
+  // so skipping the interior there saves the bulk of the shader's cost.
+  if (d < 1.0) {
+    // Interior sampled through a slight lens bulge, rotating with the body.
+    vec2 ip = rot(pn * (0.75 + 0.25*z), -uSpin);
+    float t = uTime;
+    vec3 wp = vec3(ip * 1.8, t * 0.07);
+    vec2 warp = vec2(fbm(wp + vec3(0.0,0.0,1.3)), fbm(wp + vec3(5.2,1.3,0.0)));
+    float flow = fbm(vec3(ip * 2.4 + warp * (0.9 + uOpen*0.6), t * 0.11));
+
+    // Cellular organelles: soft cells when warm, hard facets when crystalline.
+    vec2 cp = ip * (3.2 + uCrystal * 2.0) + warp * 0.4;
+    vec2 ci = floor(cp), cf = fract(cp);
+    float f1 = 8.0, f2 = 8.0;
+    for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){
+      vec2 g = vec2(float(x), float(y));
+      vec2 o = hash22(ci + g);
+      o = 0.5 + 0.42 * sin(t * 0.35 + TAU * o);
+      vec2 dv = g + o - cf;
+      float dist = mix(length(dv), max(abs(dv.x), abs(dv.y)) * 1.05, uCrystal * 0.8);
+      if(dist < f1){ f2 = f1; f1 = dist; } else if(dist < f2){ f2 = dist; }
+    }
+    float edge = f2 - f1;
+    float walls = 1.0 - smoothstep(0.0, mix(0.16, 0.05, uCrystal), edge);
+
+    // Veins: thin ridges of noise.
+    float vn = snoise(vec3(ip * 3.0 + warp, t * 0.05 + 4.0));
+    float veins = 1.0 - smoothstep(0.0, 0.07, abs(vn));
+
+    // Nucleus: heavy, lagging core with a heartbeat.
+    vec2 np = ip - rot(uNucleus / max(uRadius, 1e-3), -uSpin) * 0.6;
+    float nd = length(np);
+    float nucleus = exp(-nd*nd*(22.0 - uBeat*6.0)) * (0.5 + uBeat * 0.8);
+    float nucleusCore = exp(-nd*nd*160.0) * (0.5 + uBeat * 0.8);
+    // Growth rings (storms survived): concentric luminous bands.
+    float rings = 0.0;
+    for(int i=0;i<9;i++){
+      float fi = float(i);
+      float vis = clamp(uRings - fi, 0.0, 1.0);
+      if(vis <= 0.0) break;
+      float rr = 0.86 - fi * 0.075 + sin(th * 3.0 + fi) * 0.008;
+      rings += exp(-pow((d - rr) / 0.010, 2.0)) * vis * 0.55;
+    }
+    // Vacuoles (deluges): bright bubbles drifting in the cytoplasm.
+    float vac = 0.0;
+    for(int i=0;i<12;i++){
+      float fi = float(i);
+      if(fi >= uVacuoles) break;
+      vec2 h = hash22(vec2(fi, 3.7));
+      float a = h.x * TAU + t * 0.05 * (h.y - 0.5);
+      vec2 c = vec2(cos(a), sin(a)) * (0.25 + h.y * 0.45);
+      float s = 0.06 + h.x * 0.05;
+      float dv = length(ip - c);
+      vac += (exp(-pow((dv - s) / 0.012, 2.0)) * 0.9 + exp(-dv*dv/(s*s)) * 0.15) * clamp(uVacuoles - fi, 0.0, 1.0);
+    }
+    // Endoplasm: an inner, slower membrane that breathes against the outer one.
+    float innerR = 0.62 + 0.05 * sin(th * 3.0 + t * 0.4) + 0.03 * snoise(vec3(cos(th), sin(th), t * 0.15)) - uBeat * 0.05;
+    // A soft volume rather than a drawn line: brightest just inside its edge, fading inward.
+    float endoEdge = smoothstep(innerR + 0.06, innerR - 0.02, d) * smoothstep(innerR - 0.30, innerR - 0.02, d);
+    float endo = endoEdge * (0.16 + uOpen * 0.12) * (0.75 + 0.2 * snoise(vec3(ip * 4.0, t * 0.2)));
+    float endoFill = smoothstep(innerR + 0.05, innerR - 0.18, d);
+
+    // Heartbeat: a pressure wave travels from the nucleus out to the rim.
+    float waveR = uBeatPhase * 1.25;
+    float beatWave = exp(-pow((d - waveR) / 0.07, 2.0)) * (1.0 - smoothstep(0.55, 1.0, uBeatPhase)) * (0.35 + uEnergy * 0.4);
+    float f01 = flow * 0.5 + 0.5;
+    vec3 cyto = mix(uColB, uColA, f01);
+    cyto = mix(cyto, uColC, smoothstep(0.55, 0.95, f01) * 0.5);
+    float body = (0.10 + 0.30 * f01 * f01 + walls * (0.16 + uCrystal * 0.28) + veins * 0.14) * inside;
+    // Outer cytoplasm is thin and glassy; the endoplasm is denser and warmer.
+    body *= mix(0.55, 1.0, endoFill);
+    col += cyto * body * (0.5 + diff * 0.7);
+    col += mix(uColA, uColC, 0.35) * endo;
+    col += mix(uColA, uColC, 0.5) * beatWave * inside;
+    col += mix(uColC, uColE, uEmber) * nucleus * 0.85;
+    col += vec3(1.0, 0.97, 0.92) * nucleusCore * 0.45;
+    col += uColC * (rings + vac * 0.7) * inside;
+    col += vec3(1.0) * spec * 0.35 * inside * (0.4 + uDay * 0.6);
+  }
   col *= uBright;
   outColor = vec4(col, 1.0);
 }`;
@@ -389,6 +390,7 @@ in vec2 vUV;
 out vec4 outColor;
 uniform sampler2D uScene;
 uniform sampler2D uBloom;
+uniform sampler2D uAtmo;
 uniform vec2 uView;
 uniform vec2 uResolution;
 uniform float uTime, uDay, uTwilight, uCloud, uHumidity, uRain, uFlash, uFrost, uWarmth, uBloomGain, uGrain, uStorm;
@@ -400,27 +402,6 @@ uniform vec4 uRipples[12];
 uniform float uLab;
 
 vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
-
-vec3 sky(vec2 w, vec2 uv){
-  float h = uv.y;
-  vec3 nightTop = vec3(0.012, 0.016, 0.050);
-  vec3 nightLow = vec3(0.030, 0.022, 0.070);
-  vec3 dayTop   = vec3(0.030, 0.110, 0.160);
-  vec3 dayLow   = vec3(0.080, 0.190, 0.220);
-  vec3 duskTop  = vec3(0.070, 0.040, 0.130);
-  vec3 duskLow  = vec3(0.300, 0.110, 0.150);
-  vec3 top = mix(nightTop, dayTop, uDay);
-  vec3 low = mix(nightLow, dayLow, uDay);
-  top = mix(top, duskTop, uTwilight * 0.8);
-  low = mix(low, duskLow, uTwilight);
-  vec3 c = mix(low, top, smoothstep(0.0, 1.0, h));
-  // Overcast: flatten and grey the sky.
-  vec3 grey = vec3(0.07, 0.08, 0.095) * (0.5 + uDay * 0.9);
-  c = mix(c, grey * mix(0.9, 1.1, h), uCloud * 0.6);
-  // Frost cools the air.
-  c = mix(c, c * vec3(0.8, 0.95, 1.15), uFrost * 0.5);
-  return c;
-}
 
 void main(){
   vec2 w = (vUV * 2.0 - 1.0) * uView;
@@ -437,14 +418,8 @@ void main(){
   }
   vec2 suv = vUV + disp / uView * 0.5;
 
-  vec3 col = sky(w, vUV);
-  // Drifting fog layers; humidity thickens them, wind carries them.
-  float fogA = fbm(vec3(w * 0.55 + uFog, uTime * 0.02));
-  float fogB = fbm(vec3(w * 1.3 + uFog * 1.7 + 7.0, uTime * 0.03));
-  float fog = smoothstep(-0.3, 0.8, fogA * 0.7 + fogB * 0.3);
-  vec3 fogCol = mix(vec3(0.05, 0.07, 0.11), vec3(0.18, 0.24, 0.27), uDay);
-  fogCol = mix(fogCol, vec3(0.30, 0.17, 0.20), uTwilight * 0.4);
-  col += fogCol * fog * (0.12 + uHumidity * 0.35 + uCloud * 0.12);
+  // Sky and fog come from the low-resolution atmosphere pass.
+  vec3 col = texture(uAtmo, vUV).rgb;
   // Stars on clear nights, twinkling.
   float clear = (1.0 - uDay) * (1.0 - uCloud) * (1.0 - uHumidity * 0.4);
   if(clear > 0.01){
@@ -476,5 +451,50 @@ void main(){
   // Film grain.
   float g = hash21(vUV * uResolution + fract(uTime) * 97.0) - 0.5;
   col += g * uGrain;
+  outColor = vec4(col, 1.0);
+}`;
+
+/**
+ * Atmosphere: sky gradient and wind-carried fog. Smooth and slow, so it is
+ * rendered at a fraction of screen resolution and upscaled bilinearly.
+ */
+export const ATMO_FS = (octaves: number) => HEADER + `#define OCTAVES ${octaves}\n` + NOISE + /* glsl */ `
+in vec2 vUV;
+out vec4 outColor;
+uniform vec2 uView;
+uniform float uTime, uDay, uTwilight, uCloud, uHumidity, uFrost;
+uniform vec2 uFog;
+
+vec3 sky(vec2 w, vec2 uv){
+  float h = uv.y;
+  vec3 nightTop = vec3(0.012, 0.016, 0.050);
+  vec3 nightLow = vec3(0.030, 0.022, 0.070);
+  vec3 dayTop   = vec3(0.030, 0.110, 0.160);
+  vec3 dayLow   = vec3(0.080, 0.190, 0.220);
+  vec3 duskTop  = vec3(0.070, 0.040, 0.130);
+  vec3 duskLow  = vec3(0.300, 0.110, 0.150);
+  vec3 top = mix(nightTop, dayTop, uDay);
+  vec3 low = mix(nightLow, dayLow, uDay);
+  top = mix(top, duskTop, uTwilight * 0.8);
+  low = mix(low, duskLow, uTwilight);
+  vec3 c = mix(low, top, smoothstep(0.0, 1.0, h));
+  // Overcast: flatten and grey the sky.
+  vec3 grey = vec3(0.07, 0.08, 0.095) * (0.5 + uDay * 0.9);
+  c = mix(c, grey * mix(0.9, 1.1, h), uCloud * 0.6);
+  // Frost cools the air.
+  c = mix(c, c * vec3(0.8, 0.95, 1.15), uFrost * 0.5);
+  return c;
+}
+
+void main(){
+  vec2 w = (vUV * 2.0 - 1.0) * uView;
+  vec3 col = sky(w, vUV);
+  // Drifting fog layers; humidity thickens them, wind carries them.
+  float fogA = fbm(vec3(w * 0.55 + uFog, uTime * 0.02));
+  float fogB = fbm(vec3(w * 1.3 + uFog * 1.7 + 7.0, uTime * 0.03));
+  float fog = smoothstep(-0.3, 0.8, fogA * 0.7 + fogB * 0.3);
+  vec3 fogCol = mix(vec3(0.05, 0.07, 0.11), vec3(0.18, 0.24, 0.27), uDay);
+  fogCol = mix(fogCol, vec3(0.30, 0.17, 0.20), uTwilight * 0.4);
+  col += fogCol * fog * (0.12 + uHumidity * 0.35 + uCloud * 0.12);
   outColor = vec4(col, 1.0);
 }`;

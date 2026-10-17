@@ -154,6 +154,9 @@ export class OrganismSimulation {
   /** Packed instance data for rendering, PARTICLE_STRIDE floats each. */
   particleOut: Float32Array = new Float32Array(0);
   particleCount = 0;
+  /** Ambient motes, packed separately: they are drawn crisp, without trails. */
+  moteOut: Float32Array = new Float32Array(0);
+  moteCount = 0;
 
   ripples: Ripple[] = [];
   viewX = 1.6;
@@ -270,6 +273,7 @@ export class OrganismSimulation {
     this.maxParticles = q.maxParticles;
     this.particles = new Float32Array(q.maxParticles * this.P);
     this.particleOut = new Float32Array(q.maxParticles * PARTICLE_STRIDE);
+    this.moteOut = new Float32Array(q.maxParticles * PARTICLE_STRIDE);
     // Seed ambient motes so the first frame is already populated.
     for (let i = 0; i < q.maxParticles * 0.35; i++) this.spawnMote(i, true);
   }
@@ -603,6 +607,7 @@ export class OrganismSimulation {
       prev[o0] = rx; prev[o0 + 1] = ry; prev[o0 + 2] = f.depthNow;
 
       const n = f.segs;
+      const maxBend = f.long ? 0.3 - e.crystal * 0.15 : 0.45;
       // Long travelling waves: a little over one wavelength along the filament.
       f.phase += sdt * f.freq * (0.55 + mood.energy * 1.2) * TAU * 0.22;
       const kWave = (TAU * (1.1 + f.freq * 0.4)) / n;
@@ -683,11 +688,18 @@ export class OrganismSimulation {
           }
         }
       }
-      // A very light smoothing pass removes numerical kinks without straightening.
-      for (let j = 1; j < n - 1; j++) {
-        const a = (f.offset + j - 1) * 3, b = (f.offset + j) * 3, c = (f.offset + j + 1) * 3;
-        pts[b] += ((pts[a] + pts[c]) * 0.5 - pts[b]) * 0.04;
-        pts[b + 1] += ((pts[a + 1] + pts[c + 1]) * 0.5 - pts[b + 1]) * 0.04;
+      // Kink removal: diffuse curvature only at joints bent past maxBend. Diffusion can only
+      // remove energy (stable), and gentle curves elsewhere are left exactly as they are.
+      for (let pass = 0; pass < 3; pass++) {
+        for (let j = 1; j < n - 1; j++) {
+          const a0 = (f.offset + j - 1) * 3, b0 = (f.offset + j) * 3, c0 = (f.offset + j + 1) * 3;
+          const ang1 = Math.atan2(pts[b0 + 1] - pts[a0 + 1], pts[b0] - pts[a0]);
+          const ang2 = Math.atan2(pts[c0 + 1] - pts[b0 + 1], pts[c0] - pts[b0]);
+          const bend = Math.abs(angleDelta(ang1, ang2));
+          const w = bend > maxBend ? Math.min(0.5, (bend - maxBend) * 1.5 + 0.1) : 0.02;
+          pts[b0] += ((pts[a0] + pts[c0]) * 0.5 - pts[b0]) * w;
+          pts[b0 + 1] += ((pts[a0 + 1] + pts[c0 + 1]) * 0.5 - pts[b0 + 1]) * w;
+        }
       }
       // Light signals: each heartbeat travels out of the body into the filaments.
       if (newBeat && this.rnd() < (f.long ? (f.tier === 0 ? 0.9 : 0.4 + mood.energy * 0.3) : 0.06)) {
@@ -734,6 +746,8 @@ export class OrganismSimulation {
 
     let count = 0;
     let motes = 0;
+    let moteCount = 0;
+    const moteOut = this.moteOut;
     for (let i = 0; i < max; i++) {
       const o = i * P;
       let life = p[o + 4];
@@ -831,15 +845,20 @@ export class OrganismSimulation {
       else if (kind === P_RAIN) alpha = 0.35 + e.daylight * 0.15;
       else if (kind === P_SPORE) alpha = Math.sin(Math.PI * Math.min(1, age * 1.4)) * 0.9;
       else alpha = (1 - age) * (1 - age);
-      const w = count * PARTICLE_STRIDE;
-      out[w] = x; out[w + 1] = y; out[w + 2] = vx; out[w + 3] = vy;
-      out[w + 4] = p[o + 6] * (kind === P_MOTE ? 0.22 + depth * 0.4 : kind === P_SPORE ? 0.7 : 1);
-      out[w + 5] = alpha;
-      out[w + 6] = p[o + 8];
-      out[w + 7] = kind;
-      count++;
+      const isMote = kind === P_MOTE;
+      const buf = isMote ? moteOut : out;
+      const w = (isMote ? moteCount : count) * PARTICLE_STRIDE;
+      // Motes carry no velocity to the renderer, so they draw as round points, not streaks.
+      buf[w] = x; buf[w + 1] = y; buf[w + 2] = isMote ? 0 : vx; buf[w + 3] = isMote ? 0 : vy;
+      buf[w + 4] = p[o + 6] * (isMote ? 0.3 + depth * 0.45 : kind === P_SPORE ? 0.7 : 1);
+      buf[w + 5] = alpha;
+      buf[w + 6] = p[o + 8];
+      buf[w + 7] = kind;
+      if (isMote) moteCount++;
+      else count++;
     }
     this.particleCount = count;
+    this.moteCount = moteCount;
   }
 
   /** Signal intensity at position u (0..1) along a filament. */

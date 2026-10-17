@@ -1,73 +1,133 @@
 /**
- * Quality management: presets plus automatic adjustment of render resolution
- * based on measured frame times. Automatic mode only changes GPU-side settings
- * (resolution, bloom depth, noise octaves) so the organism itself never
- * visibly resets.
+ * Quality management: presets plus automatic adjustment.
+ *
+ * Automatic mode climbs a ladder of five rendering levels. Browsers lock frames
+ * to the display refresh (16.7 ms at 60 Hz), so "fast" cannot mean "under X ms":
+ * instead the manager learns the display's refresh interval and treats frames
+ * that keep pace with it as headroom. It steps up after sustained headroom and
+ * down after sustained slowdown, and will not climb back to a level that proved
+ * too slow until an exponentially growing wait has passed (1, 2, 4… minutes),
+ * so it settles instead of oscillating.
+ *
+ * Only GPU-side settings change in automatic mode, so the organism never resets.
  */
 import { RENDER_PRESETS, type QualityName, type RenderSettings } from './types';
 
 export type QualitySetting = 'auto' | QualityName;
 
+/** Automatic ladder, cheapest first. Level 0 is Eco, 2 is Balanced, 4 is Ultra. */
+export const AUTO_LADDER: RenderSettings[] = [
+  { ...RENDER_PRESETS.eco },
+  { renderScale: 0.75, dprCap: 1.25, bloomLevels: 4, octaves: 3, trails: true, grain: 0.013 },
+  { ...RENDER_PRESETS.balanced },
+  { renderScale: 1, dprCap: 1.5, bloomLevels: 5, octaves: 4, trails: true, grain: 0.014 },
+  { ...RENDER_PRESETS.ultra },
+];
+
+export function coarseDevice(): boolean {
+  return typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+}
+
+/** Simulation detail (filament segments, particle count) chosen once at start-up. */
 export function initialPreset(): QualityName {
   const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency ?? 4 : 4;
-  const mobile = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
-  if (mobile || cores <= 4) return 'eco';
+  if (coarseDevice() || cores <= 4) return 'eco';
   return 'balanced';
 }
 
 export class QualityManager {
   settings: RenderSettings;
+  /** Preset that sets simulation detail. */
   preset: QualityName;
-  /** Smoothed frame time in ms. */
+  /** Current level on the automatic ladder (0..4). */
+  level: number;
+  /** Smoothed frame interval in ms. */
   frameMs = 16.7;
+  /** Learned display refresh interval in ms. */
+  refreshMs = 16.7;
   private slowFor = 0;
   private fastFor = 0;
   private changed = false;
+  private warmup = 2;
+  /** Level → clock time (s) before which it may not be tried again after proving too slow. */
+  private blocked = new Map<number, number>();
+  /** Failures per level; each doubles the wait before that level is retried. */
+  private failures = new Map<number, number>();
+  private clock = 0;
 
   constructor(public mode: QualitySetting) {
     this.preset = mode === 'auto' ? initialPreset() : mode;
-    this.settings = { ...RENDER_PRESETS[this.preset] };
+    this.level = this.preset === 'eco' ? 0 : 2;
+    this.settings = mode === 'auto' ? { ...AUTO_LADDER[this.level] } : { ...RENDER_PRESETS[this.preset] };
   }
 
   setMode(mode: QualitySetting) {
     this.mode = mode;
     this.preset = mode === 'auto' ? initialPreset() : mode;
-    this.settings = { ...RENDER_PRESETS[this.preset] };
+    this.level = this.preset === 'eco' ? 0 : 2;
+    this.settings = mode === 'auto' ? { ...AUTO_LADDER[this.level] } : { ...RENDER_PRESETS[this.preset] };
     this.slowFor = this.fastFor = 0;
+    this.warmup = 2;
+    this.blocked.clear();
+    this.failures.clear();
     this.changed = true;
   }
 
-  /** Feed a frame duration; returns true when render settings changed. */
+  /** Feed a frame interval; returns true when render settings changed. */
   sample(dtMs: number, dtSeconds: number): boolean {
-    if (dtMs > 250) return this.consume(); // tab switch or stall: ignore
+    this.clock += dtSeconds;
+    if (dtMs > 250 || dtMs <= 0) return this.consume(); // tab switch or stall
     this.frameMs += (dtMs - this.frameMs) * 0.05;
+    // Refresh interval: the fastest sustained pace seen, relaxing slowly so a
+    // display change (e.g. moving to a 144 Hz monitor) is picked up.
+    if (this.frameMs < this.refreshMs) this.refreshMs = this.frameMs;
+    else this.refreshMs += (this.frameMs - this.refreshMs) * 0.0005;
+    this.refreshMs = Math.max(4, this.refreshMs);
     if (this.mode !== 'auto') return this.consume();
-    if (this.frameMs > 21) {
+    if (this.warmup > 0) {
+      this.warmup -= dtSeconds;
+      return this.consume();
+    }
+
+    const keepingPace = this.frameMs < this.refreshMs * 1.12;
+    const slipping = this.frameMs > Math.max(this.refreshMs * 1.3, this.refreshMs + 4);
+    if (slipping) {
       this.slowFor += dtSeconds;
       this.fastFor = 0;
-    } else if (this.frameMs < 14.5) {
+    } else if (keepingPace) {
       this.fastFor += dtSeconds;
       this.slowFor = 0;
     } else {
-      this.slowFor = this.fastFor = 0;
+      this.slowFor = Math.max(0, this.slowFor - dtSeconds);
+      this.fastFor = Math.max(0, this.fastFor - dtSeconds);
     }
-    const s = this.settings;
-    if (this.slowFor > 1.5) {
-      this.slowFor = 0;
-      if (s.renderScale > 0.5) s.renderScale = Math.max(0.5, +(s.renderScale - 0.1).toFixed(2));
-      else if (s.bloomLevels > 3) s.bloomLevels--;
-      else if (s.octaves > 2) s.octaves--;
-      this.changed = true;
-    } else if (this.fastFor > 5) {
+
+    if (this.slowFor > 1.5 && this.level > 0) {
+      const fails = (this.failures.get(this.level) ?? 0) + 1;
+      this.failures.set(this.level, fails);
+      this.blocked.set(this.level, this.clock + 60 * 2 ** (fails - 1));
+      this.setLevel(this.level - 1);
+    } else if (this.fastFor > 4 && this.level < AUTO_LADDER.length - 1) {
+      const next = this.level + 1;
+      if (this.clock >= (this.blocked.get(next) ?? 0)) this.setLevel(next);
       this.fastFor = 0;
-      const cap = RENDER_PRESETS[this.preset === 'eco' ? 'balanced' : 'ultra'];
-      if (s.octaves < cap.octaves - 1) s.octaves++;
-      else if (s.bloomLevels < cap.bloomLevels - 1) s.bloomLevels++;
-      else if (s.renderScale < cap.renderScale) s.renderScale = Math.min(cap.renderScale, +(s.renderScale + 0.05).toFixed(2));
-      else return this.consume();
-      this.changed = true;
     }
     return this.consume();
+  }
+
+  private setLevel(level: number) {
+    this.level = level;
+    this.settings = { ...AUTO_LADDER[level] };
+    this.slowFor = this.fastFor = 0;
+    this.warmup = 1.5; // let the new level's cost show before judging it
+    this.changed = true;
+  }
+
+  describe(kind: string): string {
+    const fps = Math.round(1000 / this.frameMs);
+    const res = `${Math.round(this.settings.renderScale * 100)}% resolution`;
+    if (this.mode === 'auto') return `${kind}, automatic level ${this.level + 1} of ${AUTO_LADDER.length} at ${res}, about ${fps} frames per second.`;
+    return `${kind}, ${this.preset} preset at ${res}, about ${fps} frames per second.`;
   }
 
   private consume(): boolean {

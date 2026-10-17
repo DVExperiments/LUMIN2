@@ -111,9 +111,9 @@ export class CanvasRenderer implements Renderer {
     ctx.lineWidth = Math.max(1, R * 0.03);
     ctx.stroke();
 
-    // Particles.
-    const out = sim.particleOut;
-    for (let i = 0; i < sim.particleCount; i++) {
+    // Particles (motes first, then rain, spores and sparks).
+    for (const [out, count] of [[sim.moteOut, sim.moteCount], [sim.particleOut, sim.particleCount]] as const) {
+    for (let i = 0; i < count; i++) {
       const o = i * PARTICLE_STRIDE;
       const x = sx(out[o]), y = sy(out[o + 1]);
       const alpha = out[o + 5];
@@ -130,6 +130,7 @@ export class CanvasRenderer implements Renderer {
         ctx.fillStyle = hslCss(e.hue + out[o + 6] * e.hueSpread, 0.6, 0.7, alpha * 0.8);
         ctx.fillRect(x - sz / 2, y - sz / 2, sz, sz);
       }
+    }
     }
     ctx.globalCompositeOperation = 'source-over';
   }

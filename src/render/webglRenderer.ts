@@ -10,7 +10,7 @@
  */
 import { GLProgram, createTarget, deleteTarget, hsl, type RenderTarget } from './gl';
 import {
-  BODY_FS, BODY_VS, COMPOSITE_FS, COPY_FS, DOWN_FS, FADE_FS, FIL_FS, FIL_VS, PART_FS, PART_VS, QUAD_VS, UP_FS,
+  ATMO_FS, BODY_FS, BODY_VS, COMPOSITE_FS, COPY_FS, DOWN_FS, FADE_FS, FIL_FS, FIL_VS, PART_FS, PART_VS, QUAD_VS, UP_FS,
 } from './shaders';
 import type { FrameInfo, RenderSettings, Renderer } from './types';
 import { MAX_RIPPLES, OrganismSimulation, PARTICLE_STRIDE } from '../organism/simulation';
@@ -33,6 +33,8 @@ export class WebGLRenderer implements Renderer {
   private progDown!: GLProgram;
   private progUp!: GLProgram;
   private progComp!: GLProgram;
+  private progAtmo!: GLProgram;
+  private atmo: RenderTarget | null = null;
   private quadVao!: WebGLVertexArrayObject;
   private filVao!: WebGLVertexArrayObject;
   private filVbo!: WebGLBuffer;
@@ -80,7 +82,7 @@ export class WebGLRenderer implements Renderer {
 
   private onRestored = () => {
     this.builtOctaves = -1;
-    this.scene = this.trailA = this.trailB = null;
+    this.scene = this.trailA = this.trailB = this.atmo = null;
     this.bloom = [];
     this.init(this.settings);
     this.resize(this.cssW, this.cssH, this.dpr);
@@ -143,8 +145,10 @@ export class WebGLRenderer implements Renderer {
     if (octaves === this.builtOctaves) return;
     this.progBody?.dispose();
     this.progComp?.dispose();
+    this.progAtmo?.dispose();
     this.progBody = new GLProgram(this.gl, BODY_VS, BODY_FS(octaves), 'body');
     this.progComp = new GLProgram(this.gl, QUAD_VS, COMPOSITE_FS(octaves), 'composite');
+    this.progAtmo = new GLProgram(this.gl, QUAD_VS, ATMO_FS(octaves), 'atmosphere');
     this.builtOctaves = octaves;
   }
 
@@ -169,6 +173,7 @@ export class WebGLRenderer implements Renderer {
     this.canvas.height = h;
     const gl = this.gl;
     deleteTarget(gl, this.scene);
+    deleteTarget(gl, this.atmo);
     deleteTarget(gl, this.trailA);
     deleteTarget(gl, this.trailB);
     for (const b of this.bloom) deleteTarget(gl, b);
@@ -181,8 +186,11 @@ export class WebGLRenderer implements Renderer {
       }
     };
     this.scene = make(w, h);
-    this.trailA = make(w, h);
-    this.trailB = make(w, h);
+    // Atmosphere at quarter resolution: it has no fine detail, and this is where most fill cost went.
+    this.atmo = make(Math.max(2, w >> 2), Math.max(2, h >> 2));
+    // Trails are soft by nature: half resolution halves the cost of the fade and copy passes.
+    this.trailA = make(Math.max(2, w >> 1), Math.max(2, h >> 1));
+    this.trailB = make(Math.max(2, w >> 1), Math.max(2, h >> 1));
     this.bloom = [];
     let bw = w, bh = h;
     for (let i = 0; i < this.settings.bloomLevels; i++) {
@@ -310,6 +318,7 @@ export class WebGLRenderer implements Renderer {
     if (sim.particleCount > 0) {
       this.progPart.use();
       gl.uniform2f(this.progPart.u('uView'), viewX, viewY);
+      // Sized in full-resolution pixels so particles look the same whatever the trail buffer size.
       gl.uniform1f(this.progPart.u('uPixel'), (2 * viewY) / this.height);
       gl.uniform3fv(this.progPart.u('uColA'), c.subarray(0, 3));
       gl.uniform3fv(this.progPart.u('uColC'), c.subarray(6, 9));
@@ -385,6 +394,21 @@ export class WebGLRenderer implements Renderer {
     gl.uniform4fv(pb.u('uRipples'), this.ripples);
     this.fullscreen();
 
+    // Ambient motes: drawn crisp into the scene, never smeared into trails.
+    if (sim.moteCount > 0) {
+      this.progPart.use();
+      gl.uniform2f(this.progPart.u('uView'), viewX, viewY);
+      gl.uniform1f(this.progPart.u('uPixel'), (2 * viewY) / this.height);
+      gl.uniform3fv(this.progPart.u('uColA'), c.subarray(0, 3));
+      gl.uniform3fv(this.progPart.u('uColC'), c.subarray(6, 9));
+      gl.uniform3fv(this.progPart.u('uMote'), c.subarray(12, 15));
+      gl.uniform1f(this.progPart.u('uBright'), 1);
+      gl.bindVertexArray(this.partVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.partVbo);
+      gl.bufferData(gl.ARRAY_BUFFER, sim.moteOut.subarray(0, sim.moteCount * PARTICLE_STRIDE), gl.DYNAMIC_DRAW);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, sim.moteCount);
+    }
+
     // Add particle trails into the scene so they bloom with everything else.
     this.progCopy.use();
     gl.activeTexture(gl.TEXTURE0);
@@ -420,7 +444,23 @@ export class WebGLRenderer implements Renderer {
     }
     gl.disable(gl.BLEND);
 
-    // 4. Composite to screen.
+    // 4. Atmosphere at low resolution.
+    if (this.atmo) {
+      this.bindTarget(this.atmo);
+      const pa = this.progAtmo;
+      pa.use();
+      gl.uniform2f(pa.u('uView'), viewX, viewY);
+      gl.uniform1f(pa.u('uTime'), sim.time);
+      gl.uniform1f(pa.u('uDay'), e.daylight);
+      gl.uniform1f(pa.u('uTwilight'), Math.max(0, 1 - Math.abs(e.daylight - 0.5) * 2.4));
+      gl.uniform1f(pa.u('uCloud'), e.cloud);
+      gl.uniform1f(pa.u('uHumidity'), e.humidity);
+      gl.uniform1f(pa.u('uFrost'), e.frost);
+      gl.uniform2f(pa.u('uFog'), frame.fogX, frame.fogY);
+      this.fullscreen();
+    }
+
+    // 5. Composite to screen.
     this.bindTarget(null);
     const pc = this.progComp;
     pc.use();
@@ -430,6 +470,9 @@ export class WebGLRenderer implements Renderer {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.bloom.length ? this.bloom[0].tex : this.scene.tex);
     gl.uniform1i(pc.u('uBloom'), 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.atmo ? this.atmo.tex : this.scene.tex);
+    gl.uniform1i(pc.u('uAtmo'), 2);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform2f(pc.u('uView'), viewX, viewY);
     gl.uniform2f(pc.u('uResolution'), this.width, this.height);

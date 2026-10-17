@@ -520,10 +520,7 @@ export class App {
     if (s.source === 'simulated') label = this.live.location ? 'Simulated weather, live data unavailable' : 'Simulated weather, no place chosen yet';
     this.ui.setStatus(s.source, this.weather.busy && s.fetchedAt === null ? 'Fetching weather' : label);
     this.ui.setConditions(s.source === 'simulated' ? '' : conditionsSentence(s.conditions, describeCode));
-    const q = this.quality;
-    this.ui.setQualityInfo(
-      `${this.renderer.kind === 'webgl2' ? 'WebGL2' : 'Canvas 2D fallback'}, ${q.preset} preset at ${Math.round(q.settings.renderScale * 100)}% resolution, about ${Math.round(1000 / q.frameMs)} frames per second.`,
-    );
+    this.ui.setQualityInfo(this.quality.describe(this.renderer.kind === 'webgl2' ? 'WebGL2' : 'Canvas 2D fallback'));
     const mode = MODE_LABEL[this.engine.mode];
     this.canvas.setAttribute('aria-label', `${genomeOf(this.active).name}, a luminous organism, is ${mode.toLowerCase()}. Move the pointer near it, click or tap to send a pulse, or use the arrow keys and space.`);
   }

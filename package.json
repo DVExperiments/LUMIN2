@@ -1,6 +1,6 @@
 {
   "name": "lumin",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "LUMIN — a living weather organism rendered in the browser",
   "scripts": {
     "dev": "vite",

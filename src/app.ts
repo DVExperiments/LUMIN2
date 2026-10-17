@@ -11,7 +11,7 @@ import { InteractionController } from './interaction/controller';
 import { HOUR, markUnrecoverableGap, recentAverage, totalGapHours } from './memory/environment';
 import { FEATURE_KEYS, conditionsToFeatures, copyFeatures, emptyFeatures, type Features } from './memory/features';
 import { beginSession, recordGentle, recordTouch, tickInteraction } from './memory/interaction';
-import { compassName, conditionsSentence, narrate, windFromName } from './memory/narrative';
+import { awaySummary, compassName, conditionsSentence, narrate, windFromName } from './memory/narrative';
 import { morphologyTargets, neutralMorphology, type Morphology } from './organism/adaptation';
 import { ageDays, cloneOrganism, createOrganism, genomeOf, ingestWeather, setLocation, type OrganismState } from './organism/state';
 import { OrganismSimulation, QUALITY_PRESETS } from './organism/simulation';
@@ -88,6 +88,8 @@ export class App {
   private storageWarned = false;
   /** Smoothed CPU milliseconds per frame: behaviour + simulation, and draw submission. */
   private simMs = 0;
+  /** Whether this visit's 'while you were away' line has been shown. */
+  private welcomed = false;
   private drawMs = 0;
 
   constructor(private canvas: HTMLCanvasElement) {}
@@ -321,7 +323,15 @@ export class App {
       if (newborn && res.hours.length) {
         this.live.ancestral = { from: res.hours[0].t, to: res.hours[res.hours.length - 1].t + HOUR, hours: report.added };
       }
-      if (!newborn && since !== null && report.added > 2) {
+      // Returning visitor: once per visit, after real catch-up data has arrived. The
+      // 'while you were away' moment replaces the plainer catch-up notice.
+      let welcomeLine: string | null = null;
+      if (!this.welcomed && !newborn && !this.lab) {
+        this.welcomed = true;
+        welcomeLine = awaySummary(this.live, Date.now(), genomeOf(this.live).name);
+      }
+      if (welcomeLine) this.ui.welcomeBack(genomeOf(this.live).name, welcomeLine);
+      else if (!newborn && since !== null && report.added > 2) {
         const parts = [`Caught up on ${report.added} hours of weather since your last visit.`];
         if (report.gapHours > 0) parts.push(`${report.gapHours} hours had no data and were left out.`);
         if (res.archiveFailed) parts.push('Older history could not be fetched this time.');

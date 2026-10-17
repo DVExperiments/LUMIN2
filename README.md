@@ -31,6 +31,13 @@ It runs entirely in your browser:
 | F | Full screen |
 | Esc | Close panels |
 
+**Returning.** When you come back, the organism's name appears with a sentence
+about the weather it lived through while you were away and how that changed
+it, for example: *"While you were away: 3 days with a storm, 43 mm of rain and
+gusts to 72 km/h. Kerein has drawn out into a streamlined shape."* It is
+built only from recorded weather; hours that could not be fetched are named,
+not invented.
+
 **Place.** On first visit the place is guessed from your time zone, so no
 location permission is needed. Click the place name to search for a city, or
 optionally use device location (rounded to about 1 km).
@@ -170,7 +177,7 @@ Weather is cached separately in IndexedDB and labelled with its age.
 
 ## Testing status
 
-* `npm test` runs 42 Vitest tests. They cover:
+* `npm test` runs 48 Vitest tests. They cover:
   * memory ordering, de-duplication, gaps, events and timescales;
   * determinism, adaptation and persistence of acquired structure;
   * history-dependent individuality;
@@ -182,7 +189,9 @@ Weather is cached separately in IndexedDB and labelled with its age.
   * simulation stability, inextensibility and absence of kinks in a gale at
     60 and 12 fps;
   * automatic quality behaviour on simulated 60 Hz and 144 Hz displays with
-    fast, mid-range and slow GPUs.
+    fast, mid-range and slow GPUs, including start-up speed and level-change
+    stalls;
+  * the returning-visitor summary, including honest reporting of missing hours.
 * The visual smoke script was run in headless Chromium (SwiftShader software
   WebGL) against the production build with mocked weather. It reported no
   console errors for the gale and cold scenarios.

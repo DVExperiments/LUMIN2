@@ -35,6 +35,15 @@ export function initialPreset(): QualityName {
   return 'balanced';
 }
 
+/**
+ * Starting rung of the automatic ladder. Desktops start in the middle whatever
+ * core count the browser reports (privacy-focused browsers under-report it);
+ * touch devices start at the bottom. Either way the ladder then adapts quickly.
+ */
+export function startLevel(): number {
+  return coarseDevice() ? 0 : 2;
+}
+
 export class QualityManager {
   settings: RenderSettings;
   /** Preset that sets simulation detail. */
@@ -48,7 +57,7 @@ export class QualityManager {
   private slowFor = 0;
   private fastFor = 0;
   private changed = false;
-  private warmup = 2;
+  private warmup = 1;
   /** Level → clock time (s) before which it may not be tried again after proving too slow. */
   private blocked = new Map<number, number>();
   /** Failures per level; each doubles the wait before that level is retried. */
@@ -57,17 +66,17 @@ export class QualityManager {
 
   constructor(public mode: QualitySetting) {
     this.preset = mode === 'auto' ? initialPreset() : mode;
-    this.level = this.preset === 'eco' ? 0 : 2;
+    this.level = startLevel();
     this.settings = mode === 'auto' ? { ...AUTO_LADDER[this.level] } : { ...RENDER_PRESETS[this.preset] };
   }
 
   setMode(mode: QualitySetting) {
     this.mode = mode;
     this.preset = mode === 'auto' ? initialPreset() : mode;
-    this.level = this.preset === 'eco' ? 0 : 2;
+    this.level = startLevel();
     this.settings = mode === 'auto' ? { ...AUTO_LADDER[this.level] } : { ...RENDER_PRESETS[this.preset] };
     this.slowFor = this.fastFor = 0;
-    this.warmup = 2;
+    this.warmup = 1;
     this.blocked.clear();
     this.failures.clear();
     this.changed = true;
@@ -107,7 +116,7 @@ export class QualityManager {
       this.failures.set(this.level, fails);
       this.blocked.set(this.level, this.clock + 60 * 2 ** (fails - 1));
       this.setLevel(this.level - 1);
-    } else if (this.fastFor > 4 && this.level < AUTO_LADDER.length - 1) {
+    } else if (this.fastFor > 1.5 && this.level < AUTO_LADDER.length - 1) {
       const next = this.level + 1;
       if (this.clock >= (this.blocked.get(next) ?? 0)) this.setLevel(next);
       this.fastFor = 0;
@@ -119,7 +128,7 @@ export class QualityManager {
     this.level = level;
     this.settings = { ...AUTO_LADDER[level] };
     this.slowFor = this.fastFor = 0;
-    this.warmup = 1.5; // let the new level's cost show before judging it
+    this.warmup = 1; // let the new level's cost show before judging it
     this.changed = true;
   }
 

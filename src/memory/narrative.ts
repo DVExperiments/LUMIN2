@@ -129,3 +129,69 @@ export function conditionsSentence(
   const wind = c.windSpeed < 3 ? 'still air' : `wind ${Math.round(c.windSpeed)} km/h from the ${compassName(c.windDirection)}`;
   return `${t}, ${sky}, ${wind}`;
 }
+
+const EVENT_PHRASE: Record<string, string> = {
+  storm: 'a storm',
+  frost: 'a frost',
+  heat: 'a hot spell',
+  deluge: 'a deluge',
+  'long-rain': 'a long rain',
+  stillness: 'a long calm',
+};
+
+function durationText(ms: number): string {
+  const h = Math.round(ms / HOUR);
+  if (h < 36) return h === 1 ? 'an hour' : `${h} hours`;
+  return days(ms / DAY);
+}
+
+/**
+ * The line shown when someone returns: what weather the organism lived through
+ * since their last visit, and what it did to it. Built only from recorded hours;
+ * returns null for short absences. Hours that could not be recovered are named,
+ * never filled in.
+ */
+export function awaySummary(o: OrganismState, now: number, name: string): string | null {
+  const pv = o.previousVisit;
+  if (!pv || now - pv.t < 2 * HOUR) return null;
+  const since = pv.t;
+  const lived = o.memory.records.filter((r) => r.t >= since && r.t < now);
+  const gapHours = o.memory.gaps.reduce((n, g) => (g.to > since ? n + Math.round((Math.min(g.to, now) - Math.max(g.from, since)) / HOUR) : n), 0);
+
+  const parts: string[] = [];
+  if (lived.length) {
+    let rain = 0, wmax = 0, tmin = Infinity, tmax = -Infinity, tsum = 0;
+    for (const r of lived) {
+      rain += r.P;
+      wmax = Math.max(wmax, r.W);
+      tmin = Math.min(tmin, r.T);
+      tmax = Math.max(tmax, r.T);
+      tsum += r.T;
+    }
+    const highlights: string[] = [];
+    const kinds = new Set(o.memory.events.filter((e) => e.t >= since && e.t < now).map((e) => e.kind));
+    // The rain total already says it rained; don't name rain twice.
+    if (rain >= 2) {
+      kinds.delete('long-rain');
+      kinds.delete('deluge');
+    }
+    for (const k of [...kinds].slice(0, 2)) if (EVENT_PHRASE[k]) highlights.push(EVENT_PHRASE[k]);
+    if (rain >= 2) highlights.push(`${Math.round(rain)} mm of rain`);
+    if (wmax >= 40) highlights.push(`gusts to ${Math.round(wmax)} km/h`);
+    if (tmin <= 3) highlights.push(`cold down to ${Math.round(tmin)}°`);
+    if (tmax >= 25) highlights.push(`warmth up to ${Math.round(tmax)}°`);
+    const span = durationText(now - since);
+    parts.push(
+      highlights.length
+        ? `While you were away: ${span} with ${joinList(highlights.slice(0, 3))}.`
+        : `While you were away: ${span} of settled weather around ${Math.round(tsum / lived.length)}°.`,
+    );
+  } else {
+    parts.push(`You were away for ${durationText(now - since)}.`);
+  }
+
+  const changes = describeChanges(pv.m, o.morphology, 0.03).slice(0, 2);
+  parts.push(changes.length ? `${name} has ${joinList(changes)}.` : `${name} has kept its shape.`);
+  if (gapHours > 0) parts.push(`Weather for ${gapHours} of those hours could not be recovered and was left out.`);
+  return parts.join(' ');
+}

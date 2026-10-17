@@ -1,5 +1,30 @@
 # Changelog
 
+## 5.0.0
+
+Final version: automatic quality that reaches the right level quickly, a
+cleaner membrane, and the returning-visitor moment the brief asks for.
+
+- **Automatic quality climbs quickly.** v4 needed about 23 seconds to reach
+  the top level from a cold start. It also chose its starting level from the
+  CPU core count, which privacy-focused browsers deliberately under-report.
+  Now desktops start at the middle level (touch devices at the bottom) and
+  headroom is confirmed in 1.5 seconds. A fast desktop reaches the top within
+  10 seconds. Downgrades still need sustained slowness, and retries still back
+  off exponentially. New tests cover the climb speed and level-change stalls.
+- **"While you were away".** When you return, the organism's name appears with
+  one sentence built only from recorded hours: how long you were gone, the
+  notable weather (rain totals, gusts, cold or heat, storms and other
+  remembered events), and how that changed the organism. Hours that could not
+  be recovered are named, never filled in. It appears once per visit, only
+  after real catch-up data has arrived, and replaces the plainer catch-up
+  notice. It is announced to screen readers through a dedicated live region.
+- **Membrane.** The far side of the rim stays clearly present (shaded rather
+  than missing), and the inner membrane is a softer, wider, dimmer layer
+  instead of a hard bright ring.
+- **Layout.** The first-light and welcome overlay is anchored from the top with
+  a safe margin, and the corner name and conditions step aside while it plays.
+
 ## 4.0.0
 
 Measuring performance instead of guessing, removing the last misleading

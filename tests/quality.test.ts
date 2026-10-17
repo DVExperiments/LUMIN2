@@ -54,3 +54,45 @@ describe('automatic quality', () => {
     expect(q.settings.renderScale).toBe(1);
   });
 });
+
+describe('automatic quality with level-change stalls', () => {
+  /**
+   * Every level change rebuilds framebuffers and may recompile shaders, so the
+   * next frames stutter. v4 misread that stutter as "too slow" and stayed low.
+   */
+  it('still climbs to the top when each level change causes a brief stall', () => {
+    const q = new QualityManager('auto');
+    let t = 0;
+    let lastLevel = q.level;
+    let stall = 0;
+    while (t < 90) {
+      if (q.level !== lastLevel) {
+        lastLevel = q.level;
+        stall = 0.6; // seconds of stutter after each change
+      }
+      let frame = Math.max(16.67, [3, 4, 5, 7, 9][q.level]);
+      if (stall > 0) {
+        frame = stall > 0.45 ? 180 : 33; // one long hitch, then a run of slow frames
+        stall -= frame / 1000;
+      }
+      q.sample(frame, frame / 1000);
+      t += frame / 1000;
+    }
+    expect(q.level).toBe(AUTO_LADDER.length - 1);
+  });
+});
+
+describe('automatic quality start-up speed', () => {
+  it('a fast desktop reaches the top level within 10 seconds of a cold start', () => {
+    const q = new QualityManager('auto');
+    let t = 0;
+    let reachedAt = Infinity;
+    while (t < 30) {
+      const frame = Math.max(16.67, [3, 4, 5, 7, 9][q.level]);
+      q.sample(frame, frame / 1000);
+      t += frame / 1000;
+      if (q.level === AUTO_LADDER.length - 1 && reachedAt === Infinity) reachedAt = t;
+    }
+    expect(reachedAt).toBeLessThan(10);
+  });
+});

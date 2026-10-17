@@ -85,6 +85,8 @@ body.ui-idle .chrome:not(:focus-within):not(.lab-banner),
 body.ui-hidden .chrome { opacity: 0; pointer-events: none; }
 body.ui-idle .chrome.identity:not(:focus-within) { opacity: 0.28; }
 body.ui-hidden .chrome.identity { opacity: 0; }
+body.welcoming .chrome.identity,
+body.welcoming .chrome.conditions { opacity: 0; }
 
 .identity {
   top: calc(var(--edge) + env(safe-area-inset-top));
@@ -251,7 +253,9 @@ body.ui-hidden .chrome.identity { opacity: 0; }
   position: fixed;
   inset: 0;
   display: grid;
-  place-content: center;
+  place-content: start center;
+  /* Anchored from the top with a safe margin, so tall letters are never clipped. */
+  padding: max(32px, calc(env(safe-area-inset-top) + 8vh)) 24px 0;
   text-align: center;
   pointer-events: none;
   z-index: 20;
@@ -268,18 +272,17 @@ body.ui-hidden .chrome.identity { opacity: 0; }
   letter-spacing: -0.02em;
   line-height: 1;
   font-variation-settings: 'opsz' 72;
-  transform: translateY(-34vh);
   text-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
 }
 .genesis-line {
-  margin: 16px 0 0;
+  margin: 16px auto 0;
+  max-width: min(46ch, 86vw);
+  line-height: 1.45;
+  text-wrap: balance;
+  text-shadow: 0 0 24px rgba(0, 0, 0, 0.8);
   font-family: var(--serif);
   font-size: var(--s2);
   color: var(--ink-2);
-  transform: translateY(-34vh);
-}
-@media (max-height: 560px) {
-  .genesis-name, .genesis-line { transform: translateY(-28vh); }
 }
 
 /* --------------------------------------------------------------------------

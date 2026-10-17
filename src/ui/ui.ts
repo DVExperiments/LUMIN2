@@ -136,12 +136,24 @@ export class UI {
     window.setTimeout(() => h.classList.remove('show'), 7000);
   }
 
-  genesis(name: string, line: string) {
+  genesis(name: string, line: string, ms = 5200) {
     $('genesis-name').textContent = name;
     $('genesis-line').textContent = line;
     const g = $('genesis');
     requestAnimationFrame(() => g.classList.add('show'));
-    window.setTimeout(() => g.classList.remove('show'), 5200);
+    window.setTimeout(() => g.classList.remove('show'), ms);
+  }
+
+  /** The returning-visitor moment: the name, then what the weather did while you were gone. */
+  welcomeBack(name: string, line: string) {
+    // Long enough to read at a calm pace: ~60 ms per character, between 7 and 14 seconds.
+    const ms = Math.min(14000, Math.max(7000, line.length * 60));
+    this.genesis(name, line, ms);
+    // The corner name and conditions step aside while the moment plays.
+    document.body.classList.add('welcoming');
+    window.setTimeout(() => document.body.classList.remove('welcoming'), ms);
+    // The overlay is decorative, so announce the line to screen readers separately.
+    $('announce').textContent = line;
   }
 
   setProbe(visible: boolean, x = 0, y = 0) {

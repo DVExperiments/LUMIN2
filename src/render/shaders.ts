@@ -148,7 +148,8 @@ void main(){
   float calm = exp(-pow((d - 1.45) / 0.05, 2.0)) * uHalo * 0.5;
   // Rim is lit unevenly: brighter on the side facing the light, dim on the far side.
   vec2 rimDir = normalize(pn + 1e-4);
-  float sunSide = 0.35 + 0.95 * max(0.0, dot(rimDir, normalize(L.xy + 1e-4)));
+  // The far side stays clearly present (shaded, never missing).
+  float sunSide = 0.62 + 0.6 * max(0.0, dot(rimDir, normalize(L.xy + 1e-4)));
 
   vec3 col = vec3(0.0);
   col += uColA * rim * (0.42 + fres * 0.4 + uBeat * 0.25) * sunSide;
@@ -213,8 +214,8 @@ void main(){
     // Endoplasm: an inner, slower membrane that breathes against the outer one.
     float innerR = 0.62 + 0.05 * sin(th * 3.0 + t * 0.4) + 0.03 * snoise(vec3(cos(th), sin(th), t * 0.15)) - uBeat * 0.05;
     // A soft volume rather than a drawn line: brightest just inside its edge, fading inward.
-    float endoEdge = smoothstep(innerR + 0.06, innerR - 0.02, d) * smoothstep(innerR - 0.30, innerR - 0.02, d);
-    float endo = endoEdge * (0.16 + uOpen * 0.12) * (0.75 + 0.2 * snoise(vec3(ip * 4.0, t * 0.2)));
+    float endoEdge = smoothstep(innerR + 0.12, innerR - 0.06, d) * smoothstep(innerR - 0.42, innerR - 0.06, d);
+    float endo = endoEdge * (0.09 + uOpen * 0.07) * (0.75 + 0.2 * snoise(vec3(ip * 4.0, t * 0.2)));
     float endoFill = smoothstep(innerR + 0.05, innerR - 0.18, d);
 
     // Heartbeat: a pressure wave travels from the nucleus out to the rim.

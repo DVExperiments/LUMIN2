@@ -28,11 +28,23 @@ describe('organism simulation', () => {
     it(`stays finite and coherent in a gale with rain at ${label}`, () => {
       const sim = run(12, dt, 90, 6);
       for (let i = 0; i < sim.pointCount * 3; i++) expect(Number.isFinite(sim.pts[i])).toBe(true);
-      // Filaments stay attached: every point within reach of the body.
+      // Filaments stay attached and inextensible: every tip within reach of the body.
       for (const f of sim.filaments) {
         const tip = (f.offset + f.segs - 1) * 3;
         const d = Math.hypot(sim.pts[tip] - sim.cx, sim.pts[tip + 1] - sim.cy);
-        expect(d).toBeLessThan(sim.shape.radius * 2 + f.segLen * f.segs * 2.2);
+        // Physical limit: rim (shape factor up to ~2) plus the chain at its maximum length scale
+        // (1.15 for long filaments, 1.2 for cilia), allowing up to 10% Verlet stretch in a gale.
+        const maxChain = f.segLen * f.lengthFactor * 1.2 * (f.segs - 1) * 1.1;
+        expect(d).toBeLessThan(sim.shape.radius * 2 + maxChain);
+        // No single segment may be badly overstretched (that would render as a kink).
+        let sum = 0, longest = 0;
+        for (let j = 1; j < f.segs; j++) {
+          const a = (f.offset + j - 1) * 3, b = (f.offset + j) * 3;
+          const l = Math.hypot(sim.pts[b] - sim.pts[a], sim.pts[b + 1] - sim.pts[a + 1]);
+          sum += l;
+          longest = Math.max(longest, l);
+        }
+        if (f.growth > 0.5) expect(longest / (sum / (f.segs - 1))).toBeLessThan(1.35);
       }
       expect(sim.particleCount).toBeGreaterThan(100);
       expect(Number.isFinite(sim.cx) && Number.isFinite(sim.cy)).toBe(true);

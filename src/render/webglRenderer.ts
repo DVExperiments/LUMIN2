@@ -226,11 +226,15 @@ export class WebGLRenderer implements Renderer {
     let v = 0, ii = 0, vert = 0;
     const e = sim.expr;
     const glowScale = 3.4;
+    const shape = sim.shape;
     for (const f of sim.filaments) {
       if (f.growth < 0.01) continue;
       const n = f.segs;
-      const depthLight = 0.6 + (f.depth * 0.5 + 0.5) * 0.55;
-      const base = (f.long ? 0.95 : 0.7) * depthLight * (0.7 + e.energy * 0.4) * Math.min(1, f.growth * 1.4);
+      // Depth: 0 far behind, 1 in front.
+      const front = f.depthNow * 0.5 + 0.5;
+      const tierGain = f.tier === 0 ? 1.15 : f.tier === 1 ? 0.62 : 0.55;
+      const base = tierGain * (0.38 + front * 0.72) * (0.7 + e.energy * 0.4) * Math.min(1, f.growth * 1.4);
+      const widthDepth = 0.6 + front * 0.55;
       const first = vert;
       for (let j = 0; j < n; j++) {
         const o = (f.offset + j) * 3;
@@ -241,9 +245,18 @@ export class WebGLRenderer implements Renderer {
         const tl = Math.hypot(tx, ty) || 1;
         tx /= tl; ty /= tl;
         const u = j / (n - 1);
-        const width = f.width * (1 - u * 0.82) * (0.55 + f.growth * 0.45) * (0.75 + depthLight * 0.35) * glowScale;
+        // Tapers from a thick root to a hair-fine tip.
+        const taper = Math.pow(1 - u, f.tier === 0 ? 0.8 : 1.1) * 0.9 + 0.1;
+        const width = f.width * taper * (0.55 + f.growth * 0.45) * widthDepth * glowScale;
         const sig = OrganismSimulation.signalAt(f, u);
-        const intensity = base * (1 - u * u * 0.55) * (0.55 + 0.45 * Math.min(1, u * 8)) + sig * 1.6;
+        let intensity = base * (1 - u * u * u * 0.85) * (0.55 + 0.45 * Math.min(1, u * 8)) + sig * (f.tier === 0 ? 1.9 : 1.3);
+        // Behind the body: seen through the translucent membrane, so dimmed.
+        if (f.depthNow < -0.05) {
+          const dx = x - sim.cx, dy = y - sim.cy;
+          const r = shape.radiusAt(Math.atan2(dy, dx));
+          const inside = 1 - Math.min(1, Math.max(0, (Math.hypot(dx, dy) - r * 0.85) / (r * 0.2)));
+          intensity *= 1 - inside * Math.min(1, -f.depthNow * 1.6) * 0.75;
+        }
         const hue = clamp(0.5 + f.hueOffset * 0.35 + u * 0.4);
         const nx = -ty * width, ny = tx * width;
         data[v++] = x + nx; data[v++] = y + ny; data[v++] = -1; data[v++] = u; data[v++] = intensity; data[v++] = hue;
@@ -350,6 +363,7 @@ export class WebGLRenderer implements Renderer {
     gl.uniform1f(pb.u('uTime'), sim.time);
     gl.uniform1f(pb.u('uSpin'), e.spin);
     gl.uniform1f(pb.u('uBeat'), e.beat);
+    gl.uniform1f(pb.u('uBeatPhase'), e.beatPhase);
     gl.uniform1f(pb.u('uEnergy'), e.energy);
     gl.uniform1f(pb.u('uTension'), e.tension);
     gl.uniform1f(pb.u('uOpen'), e.openness);

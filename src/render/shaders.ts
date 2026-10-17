@@ -84,7 +84,7 @@ uniform float uAmp[8];
 uniform float uPhase[8];
 uniform vec3 uPoly;     // sides, phase, strength
 uniform vec2 uDent;     // angle, strength
-uniform float uTime, uSpin, uBeat, uEnergy, uTension, uOpen, uCrystal, uSoft;
+uniform float uTime, uSpin, uBeat, uBeatPhase, uEnergy, uTension, uOpen, uCrystal, uSoft;
 uniform float uRings, uEmber, uVacuoles, uHalo, uBright, uLightAngle, uDay, uGlow;
 uniform vec2 uNucleus;
 uniform vec3 uColA, uColB, uColC, uColE;
@@ -203,8 +203,18 @@ void main(){
 
   // Endoplasm: an inner, slower membrane that breathes against the outer one.
   float innerR = 0.62 + 0.05 * sin(th * 3.0 + t * 0.4) + 0.04 * fbm(vec3(cos(th), sin(th), t * 0.15)) - uBeat * 0.05;
-  float endo = exp(-pow((d - innerR) / 0.035, 2.0)) * (0.35 + uOpen * 0.25);
-  float endoFill = smoothstep(innerR + 0.03, innerR - 0.12, d);
+  // A soft volume rather than a drawn line: brightest just inside its edge, fading inward.
+  float endoEdge = smoothstep(innerR + 0.06, innerR - 0.02, d) * smoothstep(innerR - 0.30, innerR - 0.02, d);
+  float endo = endoEdge * (0.16 + uOpen * 0.12) * (0.75 + 0.25 * fbm(vec3(ip * 4.0, t * 0.2)));
+  float endoFill = smoothstep(innerR + 0.05, innerR - 0.18, d);
+
+  // Heartbeat: a pressure wave travels from the nucleus out to the rim.
+  float waveR = uBeatPhase * 1.25;
+  float beatWave = exp(-pow((d - waveR) / 0.07, 2.0)) * (1.0 - smoothstep(0.55, 1.0, uBeatPhase)) * (0.35 + uEnergy * 0.4);
+
+  // Rim is lit unevenly: brighter on the side facing the light, dim on the far side.
+  vec2 rimDir = normalize(pn + 1e-4);
+  float sunSide = 0.35 + 0.95 * max(0.0, dot(rimDir, normalize(L.xy + 1e-4)));
 
   float f01 = flow * 0.5 + 0.5;
   vec3 cyto = mix(uColB, uColA, f01);
@@ -215,7 +225,8 @@ void main(){
   body *= mix(0.55, 1.0, endoFill);
   col += cyto * body * (0.5 + diff * 0.7);
   col += mix(uColA, uColC, 0.35) * endo;
-  col += uColA * rim * (0.62 + fres * 0.55 + uBeat * 0.3);
+  col += uColA * rim * (0.42 + fres * 0.4 + uBeat * 0.25) * sunSide;
+  col += mix(uColA, uColC, 0.5) * beatWave * inside;
   col += mix(uColC, uColE, uEmber) * nucleus * 0.85;
   col += vec3(1.0, 0.97, 0.92) * nucleusCore * 0.45;
   col += uColC * (rings + vac * 0.7) * inside;

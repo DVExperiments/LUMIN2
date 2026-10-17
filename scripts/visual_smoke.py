@@ -68,7 +68,7 @@ time.sleep(0.5)
 errors = []
 with sync_playwright() as p:
     browser = p.chromium.launch(args=['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'])
-    ctx = browser.new_context(viewport=dict(width=1440, height=900), timezone_id='Pacific/Auckland', device_scale_factor=1)
+    ctx = browser.new_context(viewport=dict(width=int(os.environ.get('VW', '1440')), height=int(os.environ.get('VH', '900'))), timezone_id='Pacific/Auckland', device_scale_factor=1)
     page = ctx.new_page()
     page.on('console', lambda m: errors.append(f'{m.type}: {m.text}') if m.type in ('error', 'warning') else None)
     page.on('pageerror', lambda e: errors.append(f'pageerror: {e}'))
@@ -81,10 +81,14 @@ with sync_playwright() as p:
         r.fulfill(status=200, content_type='application/json', body=json.dumps(body), headers={'Access-Control-Allow-Origin': '*'})
     page.route('https://*.open-meteo.com/**', route)
 
-    page.goto(f'http://127.0.0.1:{PORT}/')
+    page.goto(f'http://127.0.0.1:{PORT}/?debug')
     page.wait_for_timeout(1500)
     page.screenshot(path=f'{OUT}/{SCENARIO}-01-first.png')
-    page.wait_for_timeout(5000)
+    # Software WebGL is slow and each frame's time step is clamped, so wait on the
+    # organism's own simulated clock rather than wall time.
+    def wait_sim(seconds):
+        page.wait_for_function(f'() => window.lumin && window.lumin.sim.time > {seconds}', timeout=240000, polling=500)
+    wait_sim(float(os.environ.get('SETTLE_SIM_S', '10')))
     page.screenshot(path=f'{OUT}/{SCENARIO}-02-settled.png')
     page.mouse.move(820, 430); page.wait_for_timeout(600)
     page.mouse.move(800, 440, steps=10); page.wait_for_timeout(900)
@@ -97,14 +101,15 @@ with sync_playwright() as p:
     page.keyboard.press('l'); page.wait_for_timeout(500)
     page.click('#lab-enter'); page.wait_for_timeout(600)
     page.click('[data-preset="gale"]'); page.wait_for_timeout(300)
-    page.click('#lab-expose-7'); page.wait_for_timeout(4500)
+    page.click('#lab-expose-7')
+    t_lab = page.evaluate('window.lumin.sim.time'); wait_sim(t_lab + 6)
     page.screenshot(path=f'{OUT}/{SCENARIO}-05-lab.png')
     page.click('#lab-exit'); page.wait_for_timeout(2500)
     status = page.evaluate("document.getElementById('status-text').innerText")
     page.screenshot(path=f'{OUT}/{SCENARIO}-06-back-live.png')
     # Reload: identity must persist.
     name1 = page.evaluate("document.getElementById('specimen-name').innerText")
-    page.reload(); page.wait_for_timeout(2500)
+    page.reload(); page.wait_for_function('() => !!window.lumin', timeout=60000)
     name2 = page.evaluate("document.getElementById('specimen-name').innerText")
     page.set_viewport_size(dict(width=390, height=844)); page.wait_for_timeout(1200)
     page.screenshot(path=f'{OUT}/{SCENARIO}-07-mobile.png')

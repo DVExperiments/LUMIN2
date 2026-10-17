@@ -168,6 +168,8 @@ export class App {
 
     this.lastFrame = performance.now();
     this.rafId = requestAnimationFrame(this.frame);
+    // `?debug` exposes the running app for inspection from the console.
+    if (new URLSearchParams(location.search).has('debug')) (window as unknown as { lumin: unknown }).lumin = this;
 
     if (newborn) {
       const g = genomeOf(this.live);

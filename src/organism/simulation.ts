@@ -70,6 +70,8 @@ export interface Expression {
   openness: number;
   cohesion: number;
   beat: number;
+  /** 0..1 position within the current heartbeat, for the outward pulse wave. */
+  beatPhase: number;
   spin: number;
   daylight: number;
   cloud: number;
@@ -121,6 +123,12 @@ interface Filament {
   signal: number;
   signalStrength: number;
   curl: number;
+  /** 0 = primary tentacle, 1 = secondary filament, 2 = cilium. */
+  tier: number;
+  /** Individual length multiplier: a few long tentacles, many shorter ones. */
+  lengthFactor: number;
+  /** Current depth after the slow 3D tumble (−1 behind … +1 in front). */
+  depthNow: number;
 }
 
 export class OrganismSimulation {
@@ -165,6 +173,7 @@ export class OrganismSimulation {
   private flashTimer = 4;
   private spin = 0;
   private heading = 0;
+  private tilt = 0;
 
   constructor(private genome: Genome, quality: SimQuality) {
     this.noise = new Noise3(genome.seed);
@@ -173,7 +182,7 @@ export class OrganismSimulation {
     for (let i = 0; i < MAX_RIPPLES; i++) this.ripples.push({ x: 0, y: 0, age: 99, strength: 0, active: false });
     this.expr = {
       hue: genome.hue, hueSpread: genome.hueSpread, saturation: 0.7, brightness: 1, glow: 1, softness: 0.5, crystal: 0.2,
-      rings: 0, ember: 0, vacuoles: 0, halo: 0, energy: 0.5, tension: 0.2, openness: 0.5, cohesion: 0.5, beat: 0, spin: 0,
+      rings: 0, ember: 0, vacuoles: 0, halo: 0, energy: 0.5, tension: 0.2, openness: 0.5, cohesion: 0.5, beat: 0, beatPhase: 0, spin: 0,
       daylight: 0.5, cloud: 0.5, humidity: 0.6, rain: 0, windX: 0, windY: 0, warmth: 0.5, frost: 0, storm: 0, flash: 0,
       lightAngle: 0.8, nucleusX: 0, nucleusY: 0,
     };
@@ -190,24 +199,31 @@ export class OrganismSimulation {
     this.filaments = [];
     let offset = 0;
     const golden = Math.PI * (3 - Math.sqrt(5));
+    const primaries = 3 + Math.floor(r() * 3);
     for (let i = 0; i < longMax; i++) {
       const segs = q.tendrilSegments;
+      const primary = i < primaries;
+      const depth = r() * 2 - 1;
       this.filaments.push({
         anchor: (i * golden * 1.7 + r() * 0.3) % TAU,
-        depth: r() * 2 - 1,
+        depth,
         long: true,
         segs,
-        segLen: (0.028 + r() * 0.022) * g.reach * (22 / segs),
+        segLen: (0.024 + r() * 0.01) * g.reach * (22 / segs),
         offset,
         phase: r() * TAU,
-        freq: 0.6 + r() * 0.7,
-        width: 0.006 + r() * 0.006,
+        freq: 0.55 + r() * 0.6,
+        width: primary ? 0.0095 + r() * 0.003 : 0.0035 + r() * 0.003,
         hueOffset: r() * 2 - 1,
         growth: 0,
-        rank: (i + r() * 0.8) / longMax,
+        // Primaries are always the first to grow and the last to retract.
+        rank: primary ? (i / longMax) * 0.3 : 0.25 + ((i - primaries + r() * 0.8) / (longMax - primaries)) * 0.75,
         signal: 2,
         signalStrength: 0,
-        curl: (r() * 2 - 1) * 0.9,
+        curl: (r() * 2 - 1) * 1.6,
+        tier: primary ? 0 : 1,
+        lengthFactor: primary ? 1.05 + r() * 0.25 : 0.5 + Math.pow(r(), 1.6) * 0.5,
+        depthNow: depth,
       });
       offset += segs;
     }
@@ -229,16 +245,27 @@ export class OrganismSimulation {
         signal: 2,
         signalStrength: 0,
         curl: (r() * 2 - 1) * 0.6,
+        tier: 2,
+        lengthFactor: 0.7 + r() * 0.6,
+        depthNow: 0,
       });
       offset += segs;
     }
     this.pointCount = offset;
     this.pts = new Float32Array(offset * 3);
     this.prev = new Float32Array(offset * 3);
-    // Initialise all points at the body centre; they unfurl over the first second.
-    for (let i = 0; i < offset; i++) {
-      this.pts[i * 3] = this.prev[i * 3] = this.cx;
-      this.pts[i * 3 + 1] = this.prev[i * 3 + 1] = this.cy;
+    // Initialise every filament laid out along its outward direction, folded short.
+    // Starting extended means a chain can never begin tangled inside the body; it
+    // simply lengthens as it grows.
+    for (const f of this.filaments) {
+      const dx = Math.cos(f.anchor + this.spin), dy = Math.sin(f.anchor + this.spin);
+      for (let j = 0; j < f.segs; j++) {
+        const o = (f.offset + j) * 3;
+        const rr = 0.17 + j * f.segLen * 0.08;
+        this.pts[o] = this.prev[o] = this.cx + dx * rr;
+        this.pts[o + 1] = this.prev[o + 1] = this.cy + dy * rr;
+        this.pts[o + 2] = this.prev[o + 2] = f.depth;
+      }
     }
     this.maxParticles = q.maxParticles;
     this.particles = new Float32Array(q.maxParticles * this.P);
@@ -382,6 +409,7 @@ export class OrganismSimulation {
     const ph = this.beatPhase % 1;
     const beat = ph < 0.18 ? smoothstep(0, 0.18, ph) : Math.exp(-(ph - 0.18) * 5.5);
     e.beat = beat;
+    e.beatPhase = ph;
     const beatIndex = Math.floor(this.beatPhase);
     const newBeat = beatIndex !== this.lastBeat;
     this.lastBeat = beatIndex;
@@ -440,7 +468,7 @@ export class OrganismSimulation {
     // --- Membrane shape ----------------------------------------------------------
     const s = this.shape;
     const breath = 1 + Math.sin(t * 0.7 * (0.6 + mood.energy)) * 0.025;
-    const targetRadius = (0.19 + morph.expanse * 0.09 + mood.openness * 0.03) * breath * (1 - beat * 0.07 * (0.6 + mood.energy));
+    const targetRadius = (0.17 + morph.expanse * 0.08 + mood.openness * 0.03) * breath * (1 - beat * 0.07 * (0.6 + mood.energy));
     s.radius = approach(s.radius, targetRadius, dt, 0.25);
     s.reset();
     const lobeAmp = 0.05 + mood.openness * 0.09 - mood.cohesion * 0.04 + ctx.arousal * 0.03;
@@ -523,76 +551,104 @@ export class OrganismSimulation {
     const acquiredStream = morph.elongation * clamp(Math.hypot(morph.axisX, morph.axisY) * 2.2);
     const longActive = clamp((0.55 + morph.filament * 0.6) * (0.75 + mood.openness * 0.35));
     const ciliaActive = clamp((0.35 + morph.density * 0.75) * (0.7 + mood.openness * 0.4));
-    const stiffBase = 5 + mood.cohesion * 9 + e.crystal * 14 - mood.openness * 2;
-    const waveAmp = (0.25 + mood.energy * 0.45) * (1 - e.crystal * 0.55) * (ctx.reducedMotion ? 0.5 : 1);
-    const lengthScale = 0.65 + morph.filament * 0.75 + mood.openness * 0.25 - e.crystal * 0.15;
-    const damping = Math.exp(-dt * (2.2 + mood.cohesion * 1.5));
+    // Shape memory: how strongly each segment returns to the filament's base direction.
+    // Warm, open organisms are loose and flowing; cold, crystalline ones hold rigid spines.
+    const memory = clamp(0.1 + e.crystal * 0.5 + mood.cohesion * 0.08 - mood.openness * 0.04, 0.06, 0.7);
+    const follow = 26 + e.crystal * 30 + mood.cohesion * 10;
+    // Per-segment bend (radians); it accumulates along the chain, so it is kept small.
+    const waveAmp = (0.028 + mood.energy * 0.03) * (1 - e.crystal * 0.75) * (ctx.reducedMotion ? 0.55 : 1);
+    // Reach is capped so the whole organism stays in view.
+    const lengthScale = Math.min(1.15, 0.7 + morph.filament * 0.45 + mood.openness * 0.15 - e.crystal * 0.12);
+    const damping = Math.exp(-dt * (2.6 + mood.cohesion * 1.5));
     const px = pointer.x, py = pointer.y;
     const pSpeed = Math.hypot(pointer.vx, pointer.vy);
     const reachToward = pointer.present ? (mood.curiosity * 0.7 + ctx.familiarity * 0.6 - mood.tension) * (1 - smoothstep(0.5, 2, pSpeed)) : 0;
     const flee = pointer.present ? smoothstep(0.6, 2.6, pSpeed) * (0.4 + mood.sensitivity) : 0;
     const signalSpeed = 0.5 + mood.energy * 0.8;
+    // A slow 3D tumble carries filaments in front of and behind the body.
+    this.tilt += sdt * 0.05 * this.genome.chirality;
 
     for (const f of this.filaments) {
       const activeFrac = f.long ? longActive : ciliaActive;
       const want = f.rank < activeFrac ? 1 : 0;
       f.growth = approach(f.growth, want, dt, f.long ? 2.5 : 1.2);
-      if (f.growth < 0.002 && want === 0) continue;
+      if (f.growth < 0.002 && want === 0) {
+        // Retracted: stay folded at the anchor and travel with the body, so a
+        // regrowing filament unfurls from the membrane rather than from where the body used to be.
+        const th = f.anchor + this.spin;
+        const ax = this.cx + Math.cos(th) * s.radius * 0.9, ay = this.cy + Math.sin(th) * s.radius * 0.9;
+        for (let j = 0; j < f.segs; j++) {
+          const o = (f.offset + j) * 3;
+          pts[o] = prev[o] = ax;
+          pts[o + 1] = prev[o + 1] = ay;
+        }
+        continue;
+      }
+      f.depthNow = clamp(f.depth * 0.55 + Math.sin(f.anchor * 1.3 + this.tilt) * 0.6, -1, 1);
 
       // Anchor on the membrane, rotating with the body.
       const theta = f.anchor + this.spin;
-      const ring = s.radiusAt(theta) * (0.96 - Math.abs(f.depth) * 0.06);
+      const ring = s.radiusAt(theta) * (0.95 - Math.abs(f.depthNow) * 0.07);
       const rx = this.cx + Math.cos(theta) * ring;
       const ry = this.cy + Math.sin(theta) * ring;
-      // Rest direction: outward normal, bent downstream by wind and acquired streamlining.
-      const stream = clamp((f.long ? 0.85 : 0.35) * (windStrength * 1.2 + acquiredStream * 0.8));
+      // Base direction: outward normal, bent downstream by wind and acquired streamlining.
+      // Breezes barely bend the base direction; gales and acquired streamlining do.
+      const stream = clamp((f.long ? 0.85 : 0.35) * (smoothstep(0.3, 0.85, windStrength) + acquiredStream * 0.8));
       const baseDir = theta + angleDelta(theta, downstream) * stream;
-      const segLen = f.segLen * f.growth * (f.long ? lengthScale : 0.8 + mood.openness * 0.4 - e.crystal * 0.2);
-      const stiff = (f.long ? stiffBase : stiffBase * 2.2) * (0.6 + 0.4 * f.growth);
+      const segLen = f.segLen * f.lengthFactor * f.growth * (f.long ? lengthScale : 0.8 + mood.openness * 0.4 - e.crystal * 0.2);
+      const k = (f.long ? follow : follow * 1.6) * (0.6 + 0.4 * f.growth);
 
       const o0 = f.offset * 3;
-      pts[o0] = rx; pts[o0 + 1] = ry; pts[o0 + 2] = f.depth;
-      prev[o0] = rx; prev[o0 + 1] = ry; prev[o0 + 2] = f.depth;
+      pts[o0] = rx; pts[o0 + 1] = ry; pts[o0 + 2] = f.depthNow;
+      prev[o0] = rx; prev[o0 + 1] = ry; prev[o0 + 2] = f.depthNow;
 
-      let restX = rx, restY = ry;
-      let dir = baseDir;
       const n = f.segs;
-      // Swimming wave travels from root to tip; the heartbeat adds a whip.
-      f.phase += sdt * f.freq * (0.6 + mood.energy * 1.4) * TAU * 0.25;
+      // Long travelling waves: a little over one wavelength along the filament.
+      f.phase += sdt * f.freq * (0.55 + mood.energy * 1.2) * TAU * 0.22;
+      const kWave = (TAU * (1.1 + f.freq * 0.4)) / n;
+      let dirPrev = baseDir;
       for (let j = 1; j < n; j++) {
         const u = j / (n - 1);
-        const wave = Math.sin(f.phase - j * 0.42) * waveAmp * (f.long ? 0.35 : 0.5) * u;
-        const curl = f.curl * (0.18 + mood.openness * 0.25) * u * (1 - e.crystal * 0.7);
-        dir += (wave + curl) / n * 2.2 + (beat * 0.3 * (f.long ? 1 : 0.4)) / n * Math.sin(f.phase);
-        restX += Math.cos(dir) * segLen;
-        restY += Math.sin(dir) * segLen;
-
         const o = (f.offset + j) * 3;
+        const a = (f.offset + j - 1) * 3;
+        // Direction of the actual previous segment (root uses the base direction).
+        if (j >= 2) {
+          const b = (f.offset + j - 2) * 3;
+          dirPrev = Math.atan2(pts[a + 1] - pts[b + 1], pts[a] - pts[b]);
+        }
+        const wave = Math.sin(f.phase - j * kWave) * waveAmp * (f.long ? 1 : 1.4) * (0.35 + u);
+        // Tips curl, more when relaxed and open.
+        const curl = f.curl * (0.012 + mood.openness * 0.014) * u * u * (1 - e.crystal * 0.85);
+        const whip = beat * 0.02 * Math.sin(f.phase - j * kWave * 0.5) * (f.long ? 1 : 0.3);
+        // Roots leave the membrane firmly outward; tips are free.
+        // Secondaries and cilia are stiffer than the free-flowing primaries.
+        const mem = Math.min(0.9, memory * (f.tier === 0 ? 1 : 1.8) + (f.tier === 0 ? 0 : 0.08) + (1 - u) * (1 - u) * 0.55);
+        const desired = dirPrev + angleDelta(dirPrev, baseDir) * mem + wave + curl + whip;
+        const tx = pts[a] + Math.cos(desired) * segLen;
+        const ty = pts[a + 1] + Math.sin(desired) * segLen;
+
         const x = pts[o], y = pts[o + 1];
-        let vx = (x - prev[o]) * damping;
-        let vy = (y - prev[o + 1]) * damping;
-        let fx = (restX - x) * stiff * (1.2 - u * 0.6);
-        let fy = (restY - y) * stiff * (1.2 - u * 0.6);
-        // Wind with turbulence, stronger at the tips.
-        // Low spatial frequency and coherent along each filament, so it sways rather than jitters.
+        const vx = (x - prev[o]) * damping;
+        const vy = (y - prev[o + 1]) * damping;
+        let fx = (tx - x) * k;
+        let fy = (ty - y) * k;
+        // Wind with coherent turbulence, stronger toward the tips.
         const turb = this.noise.noise(x * 0.9 + t * 0.35, y * 0.9, t * 0.25 + f.depth + u * 0.6);
         const turb2 = this.noise.noise(x * 0.9 + 17, y * 0.9 - t * 0.35, t * 0.25 + 9 + u * 0.6);
-        const wgain = (f.long ? 2.2 : 1.2) * u;
-        fx += (windX * (1 + turb * 0.6) + turb * windStrength * 0.45) * wgain;
-        fy += (windY * (1 + turb2 * 0.6) + turb2 * windStrength * 0.45) * wgain;
-        // Idle turbulence keeps filaments alive even in still air.
-        fx += turb * 0.35 * u * (0.4 + mood.energy);
-        fy += turb2 * 0.35 * u * (0.4 + mood.energy);
+        const wgain = (f.long ? 0.9 : 0.6) * u * u;
+        fx += (windX * (1 + turb * 0.6) + turb * windStrength * 0.4) * wgain;
+        fy += (windY * (1 + turb2 * 0.6) + turb2 * windStrength * 0.4) * wgain;
+        fx += turb * 0.22 * u * (0.4 + mood.energy);
+        fy += turb2 * 0.22 * u * (0.4 + mood.energy);
         // Pointer: reach toward slow, gentle presence; recoil from fast movement.
         if (pointer.present) {
           const dx = px - x, dy = py - y;
-          const d2 = dx * dx + dy * dy + 0.002;
-          const d = Math.sqrt(d2);
+          const d = Math.sqrt(dx * dx + dy * dy + 0.002);
           if (d < 0.75) {
             const fall = 1 - d / 0.75;
-            const k = (reachToward * 1.8 * fall * u - flee * 6 * fall * fall) / d;
-            fx += dx * k;
-            fy += dy * k;
+            const kk = (reachToward * 1.6 * fall * u - flee * 5 * fall * fall) / d;
+            fx += dx * kk;
+            fy += dy * kk;
           }
         }
         // Ripple wavefronts push outward.
@@ -602,16 +658,16 @@ export class OrganismSimulation {
           const d = Math.sqrt(dx * dx + dy * dy) + 1e-4;
           const front = rp.age * 0.9;
           const band = Math.exp(-((d - front) * (d - front)) / 0.004);
-          const k = band * rp.strength * 9 * Math.exp(-rp.age * 1.2) / d;
-          fx += dx * k;
-          fy += dy * k;
+          const kk = band * rp.strength * 8 * Math.exp(-rp.age * 1.2) / d;
+          fx += dx * kk;
+          fy += dy * kk;
         }
         prev[o] = x; prev[o + 1] = y;
         pts[o] = x + vx + fx * sdt * sdt;
         pts[o + 1] = y + vy + fy * sdt * sdt;
-        pts[o + 2] = f.depth * (1 - u * 0.5) + Math.sin(f.phase * 0.5 - j * 0.2) * 0.25 * u;
+        pts[o + 2] = f.depthNow * (1 - u * 0.4) + Math.sin(f.phase * 0.5 - j * 0.2) * 0.2 * u;
       }
-      // Distance constraints, root pinned.
+      // Inextensible: enforce segment length, root pinned.
       for (let iter = 0; iter < 2; iter++) {
         for (let j = 1; j < n; j++) {
           const a = (f.offset + j - 1) * 3, b = (f.offset + j) * 3;
@@ -627,17 +683,16 @@ export class OrganismSimulation {
           }
         }
       }
-      // Bending stiffness: relax interior points toward their neighbours' midpoint.
-      const bend = f.long ? 0.28 + e.crystal * 0.2 : 0.18;
+      // A very light smoothing pass removes numerical kinks without straightening.
       for (let j = 1; j < n - 1; j++) {
         const a = (f.offset + j - 1) * 3, b = (f.offset + j) * 3, c = (f.offset + j + 1) * 3;
-        pts[b] += ((pts[a] + pts[c]) * 0.5 - pts[b]) * bend;
-        pts[b + 1] += ((pts[a + 1] + pts[c + 1]) * 0.5 - pts[b + 1]) * bend;
+        pts[b] += ((pts[a] + pts[c]) * 0.5 - pts[b]) * 0.04;
+        pts[b + 1] += ((pts[a + 1] + pts[c + 1]) * 0.5 - pts[b + 1]) * 0.04;
       }
-      // Light signals: born on heartbeats, carried outward.
-      if (newBeat && this.rnd() < (f.long ? 0.35 + mood.energy * 0.4 : 0.05)) {
-        f.signal = 0;
-        f.signalStrength = 0.5 + mood.energy * 0.6 + proximity * 0.4;
+      // Light signals: each heartbeat travels out of the body into the filaments.
+      if (newBeat && this.rnd() < (f.long ? (f.tier === 0 ? 0.9 : 0.4 + mood.energy * 0.3) : 0.06)) {
+        f.signal = -0.12 - this.rnd() * 0.08;
+        f.signalStrength = (f.tier === 0 ? 0.8 : 0.5) + mood.energy * 0.5 + proximity * 0.4;
       }
       if (f.signal < 1.4) f.signal += sdt * signalSpeed * (f.long ? 0.6 : 1.8);
       else f.signalStrength = approach(f.signalStrength, 0, dt, 0.5);
